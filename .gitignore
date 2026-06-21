@@ -28,3 +28,7 @@ target
 # Debug
 *.log
 __pycache__/
+
+
+.agents/
+.claude/
