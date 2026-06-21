@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sondera"
+version = "0.1.0"
+description = "Policy gate for autonomous AI agents — connects to the Sondera harness"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+langchain = ["langchain-core>=0.2"]
+aiohttp   = ["aiohttp>=3.9"]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "responses>=0.25",
+    "aiohttp>=3.9",
+    "aioresponses>=0.7",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

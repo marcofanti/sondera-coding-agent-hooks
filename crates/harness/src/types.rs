@@ -691,6 +691,10 @@ pub struct Adjudicated {
     /// Annotations from matching policies (extracted from Cedar @annotations)
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub annotations: Vec<Annotation>,
+    /// When `decision == Escalate`, the ID of the created EscalationStore record.
+    /// Clients can poll `GET /api/escalations/{id}` for operator approval.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub escalation_id: Option<String>,
 }
 
 impl Adjudicated {
@@ -699,6 +703,7 @@ impl Adjudicated {
             decision,
             reason: None,
             annotations: Vec::new(),
+            escalation_id: None,
         }
     }
 

@@ -42,6 +42,7 @@
 
 @id("forbid-file-write-hc-to-public")
 @description("IFC: block writing highly confidential content to a Public-labeled file — prevents data spillage.")
+@taint("exfiltration")
 forbid (
     principal,
     action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
@@ -53,6 +54,7 @@ forbid (
 
 @id("forbid-file-write-hc-to-internal")
 @description("IFC: block writing highly confidential content to an Internal-labeled file — prevents data spillage.")
+@taint("exfiltration")
 forbid (
     principal,
     action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
@@ -64,6 +66,7 @@ forbid (
 
 @id("forbid-file-write-confidential-to-public")
 @description("IFC: block writing confidential content to a Public-labeled file — prevents data spillage.")
+@taint("exfiltration")
 forbid (
     principal,
     action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
@@ -110,6 +113,7 @@ forbid (
 
 @id("forbid-private-key-read")
 @description("Block reading private key files — agent should never access raw key material.")
+@taint("credential_access")
 forbid (
     principal,
     action == Jans::Action::"read_file",
@@ -124,6 +128,7 @@ forbid (
 
 @id("forbid-private-key-write")
 @description("Block writing private key files — agent should not generate or overwrite key material.")
+@taint("credential_access")
 forbid (
     principal,
     action in [Jans::Action::"write_file", Jans::Action::"edit_file"],

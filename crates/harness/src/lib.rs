@@ -24,6 +24,7 @@
 
 mod cedar;
 pub mod cedarling;
+pub mod escalation;
 mod harness;
 pub mod mandate;
 mod policy_engine;
@@ -48,3 +49,6 @@ pub use sondera_information_flow_control::Label;
 
 // Re-export Turso storage types
 pub use storage::turso::{TrajectoryStats, TrajectoryStore, get_default_db_path};
+
+// Re-export escalation API state for server wiring
+pub use escalation::api::AdminState;

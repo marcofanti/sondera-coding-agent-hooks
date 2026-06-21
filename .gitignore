@@ -27,3 +27,4 @@ target
 
 # Debug
 *.log
+__pycache__/

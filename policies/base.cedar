@@ -110,6 +110,7 @@ forbid (
 
 @id("forbid-credential-access-prompt")
 @description("Block prompts that attempt to access or extract credentials.")
+@taint("credential_access")
 forbid (
     principal,
     action == Jans::Action::"observe_prompt",
@@ -120,6 +121,7 @@ forbid (
 
 @id("forbid-data-exfiltration-prompt")
 @description("Block prompts with data exfiltration patterns.")
+@taint("exfiltration")
 forbid (
     principal,
     action == Jans::Action::"observe_prompt",
@@ -220,6 +222,7 @@ forbid (
 
 @id("forbid-shell-exfiltration")
 @description("Block shell commands with data exfiltration patterns (curl to paste sites, DNS tunneling).")
+@taint("exfiltration")
 forbid (
     principal,
     action == Jans::Action::"exec_command",
@@ -230,6 +233,7 @@ forbid (
 
 @id("forbid-shell-credential-access")
 @description("Block shell commands accessing sensitive credential files or cloud configs.")
+@taint("credential_access")
 forbid (
     principal,
     action == Jans::Action::"exec_command",

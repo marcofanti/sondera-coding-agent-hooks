@@ -103,7 +103,26 @@
                         "attributes": {
                             "workspace": { "required": false, "type": "WorkspaceContext" },
                             "signature": { "required": false, "type": "SignatureContext" },
-                            "label":     { "required": false, "type": "Entity", "name": "Jans::Label" }
+                            "label":     { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" },
+                            "content":   { "required": false, "type": "String" },
+                            "role":      { "required": false, "type": "String" }
+                        }
+                    }
+                }
+            },
+            "observe_think": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["Message"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" },
+                            "thought":    { "required": false, "type": "String" }
                         }
                     }
                 }
@@ -299,6 +318,198 @@
                             "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
                             "path":       { "required": false, "type": "String" },
                             "content":    { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+
+            "read_email": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "send_email": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":   { "required": false, "type": "WorkspaceContext" },
+                            "signature":   { "required": false, "type": "SignatureContext" },
+                            "label":       { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":         { "required": false, "type": "String" },
+                            "recipient":   { "required": false, "type": "String" },
+                            "subject":     { "required": false, "type": "String" },
+                            "trajectory":  { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "list_emails": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "read_calendar": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "create_event": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "update_event": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "delete_event": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+
+            "navigate": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "fill_form": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":   { "required": false, "type": "WorkspaceContext" },
+                            "signature":   { "required": false, "type": "SignatureContext" },
+                            "label":       { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":         { "required": false, "type": "String" },
+                            "field_type":  { "required": false, "type": "String" },
+                            "trajectory":  { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "submit_form": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "evaluate_script": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "policy":     { "required": false, "type": "PolicyContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "take_screenshot": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
                             "trajectory": { "required": false, "type": "TrajectoryContext" }
                         }
                     }

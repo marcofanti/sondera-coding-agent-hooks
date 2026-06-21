@@ -115,18 +115,25 @@ fn workspace_from_raw(raw: Option<&serde_json::Value>) -> serde_json::Value {
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 /// Translate an Event into the five components needed for a Cedar is_authorized call.
-pub fn build_request(
+///
+/// `raw_override`, when provided, takes priority over `event.raw` for
+/// `signature`, `label`, and `policy` fields.  This allows the caller to inject
+/// pre-computed guardrail results (YARA-X, IFC, policy classifier) without
+/// mutating the original event.
+pub fn build_request_with_raw(
     event: &Event,
     entity_store: &EntityStore,
+    raw_override: Option<&serde_json::Value>,
 ) -> Result<(EntityUid, EntityUid, EntityUid, Context, Entities)> {
-    let raw = event.raw.as_ref();
+    // raw_override wins for guardrail fields; event.raw wins for workspace etc.
+    let raw = raw_override.or(event.raw.as_ref());
     let tctx = load_trajectory(&event.trajectory_id, entity_store);
 
     let principal = jans_uid("Jans::Workload", &event.agent.id)?;
     let sig = sig_from_raw(raw);
     let policy = policy_from_raw(raw);
     let label = label_from_raw(raw);
-    let workspace = workspace_from_raw(raw);
+    let workspace = workspace_from_raw(event.raw.as_ref());
     let trajectory_val = trajectory_context_value(&tctx);
 
     let (action, resource, context, extra_entities) = match &event.event {
@@ -154,11 +161,12 @@ pub fn build_request(
             let binary = sc.command.split_whitespace().next().unwrap_or("sh");
             let action = jans_uid("Jans::Action", "exec_command")?;
             let resource = jans_uid("Jans::Shell", binary)?;
+            let working_dir = sc.working_dir.as_deref().unwrap_or("");
             let ctx = Context::from_json_value(
                 serde_json::json!({
                     "workspace": workspace, "signature": sig, "policy": policy,
                     "label": label, "trajectory": trajectory_val,
-                    "command": sc.command, "working_dir": sc.working_dir
+                    "command": sc.command, "working_dir": working_dir
                 }),
                 None,
             )
@@ -172,7 +180,17 @@ pub fn build_request(
 
         TrajectoryEvent::Action(Action::WebFetch(wf)) => {
             let domain = extract_domain(&wf.url);
-            let action = jans_uid("Jans::Action", "call_api")?;
+            // Browser and communication sub-actions use the prompt field as the Cedar action name.
+            let cedar_action = match wf.prompt.as_str() {
+                "navigate" | "fill_form" | "submit_form" | "evaluate_script"
+                | "take_screenshot"
+                | "send_email" | "read_email" | "list_emails"
+                | "read_calendar" | "create_event" | "update_event" | "delete_event" => {
+                    wf.prompt.as_str()
+                }
+                _ => "call_api",
+            };
+            let action = jans_uid("Jans::Action", cedar_action)?;
             let resource = jans_uid("Jans::API", &domain)?;
             let ctx = Context::from_json_value(
                 serde_json::json!({
@@ -300,10 +318,12 @@ pub fn build_request(
         }
 
         TrajectoryEvent::Observation(Observation::FileOperationResult(fo)) => {
+            // FileOperationResult has no path field — use the call_id as the resource ID,
+            // supplemented by the path from raw metadata when the hook provides it.
             let path = raw
                 .and_then(|r| r.get("path"))
                 .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
+                .unwrap_or(&fo.call_id);
             let content = fo.content.as_deref().unwrap_or("");
             let action = jans_uid("Jans::Action", "observe_file_result")?;
             let resource = jans_uid("Jans::File", path)?;
@@ -321,6 +341,26 @@ pub fn build_request(
                 "attrs": {}, "parents": []
             });
             (action, resource, ctx, vec![file_entity])
+        }
+
+        TrajectoryEvent::Observation(Observation::Think(t)) => {
+            let msg_id = &event.event_id;
+            let action = jans_uid("Jans::Action", "observe_think")?;
+            let resource = jans_uid("Jans::Message", msg_id)?;
+            let ctx = Context::from_json_value(
+                serde_json::json!({
+                    "workspace": workspace, "signature": sig,
+                    "label": label, "trajectory": trajectory_val,
+                    "thought": t.thought
+                }),
+                None,
+            )
+            .context("Failed to build observe_think context")?;
+            let msg_entity = serde_json::json!({
+                "uid": {"type": "Jans::Message", "id": msg_id},
+                "attrs": {}, "parents": []
+            });
+            (action, resource, ctx, vec![msg_entity])
         }
 
         other => {
@@ -342,4 +382,13 @@ fn extract_domain(url: &str) -> String {
         .next()
         .unwrap_or(url)
         .to_string()
+}
+
+/// Convenience wrapper that uses `event.raw` as the only guardrail source.
+#[allow(dead_code)]
+pub fn build_request(
+    event: &Event,
+    entity_store: &EntityStore,
+) -> Result<(EntityUid, EntityUid, EntityUid, Context, Entities)> {
+    build_request_with_raw(event, entity_store, None)
 }

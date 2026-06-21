@@ -52,6 +52,16 @@ enum Commands {
     PreCompact,
     SessionStart,
     SessionEnd,
+    /// Issue or inspect mandate JWTs for per-agent policy constraints.
+    Mandate {
+        #[command(subcommand)]
+        action: MandateAction,
+    },
+    /// List and approve/deny pending escalations from the admin HTTP server.
+    Escalations {
+        #[command(subcommand)]
+        action: EscalationAction,
+    },
 }
 
 #[tokio::main]
@@ -59,7 +69,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     init_tracing("sondera_claude", cli.verbose);
 
-    // Handle install/uninstall early — these don't need the harness
+    // Handle install/uninstall and mandate subcommands early — no harness needed.
     match &cli.command {
         Commands::Install { user, project } => {
             let scope = match (*user, *project) {
@@ -77,6 +87,8 @@ async fn main() -> Result<()> {
             };
             return uninstall_hooks(scope);
         }
+        Commands::Mandate { action } => return handle_mandate(action),
+        Commands::Escalations { action } => return handle_escalations(action),
         _ => {}
     }
 
@@ -85,7 +97,7 @@ async fn main() -> Result<()> {
     let mut hooks = Hooks::new(harness, agent_id("claude"));
 
     let response = match cli.command {
-        Commands::Install { .. } | Commands::Uninstall { .. } => unreachable!(),
+        Commands::Install { .. } | Commands::Uninstall { .. } | Commands::Mandate { .. } | Commands::Escalations { .. } => unreachable!(),
         Commands::PreToolUse => hooks.handle_pre_tool_use(read_stdin()?).await?,
         Commands::PermissionRequest => hooks.handle_permission_request(read_stdin()?).await?,
         Commands::PostToolUse => hooks.handle_post_tool_use(read_stdin()?).await?,

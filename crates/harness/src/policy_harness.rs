@@ -1,5 +1,6 @@
 use crate::cedar::CedarPolicyEngine;
 use crate::cedarling::CedarlingPolicyEngine;
+use crate::escalation::api::AdminState;
 use crate::mandate::MandatePolicyEngine;
 use crate::cedar::entity::Trajectory;
 use crate::harness::Harness;
@@ -7,18 +8,22 @@ use crate::policy_engine::PolicyEngine;
 use crate::storage::entity::EntityStore;
 use crate::storage::file;
 use crate::storage::turso::{TrajectoryStore, get_default_db_path};
-use crate::{Actor, Adjudicated, Agent, Causality, Control, Event, TrajectoryEvent};
+use crate::{Actor, Adjudicated, Agent, Causality, Control, Decision, Event, TrajectoryEvent};
 use anyhow::{Context as AnyhowContext, Result};
 use cedar_policy::{Entity, EntityId, EntityUid, PolicySet, Schema};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use tracing::{debug, instrument};
+use std::sync::Arc;
+use tracing::{debug, instrument, warn};
 
 /// Harness runtime parameterized by a pluggable policy engine.
 pub struct PolicyHarness<E> {
     entity_store: EntityStore,
     trajectory_store: TrajectoryStore,
     engine: E,
+    /// When set, escalated decisions are persisted, broadcast via SSE, and notified via Slack.
+    escalation: Option<Arc<AdminState>>,
+    escalation_ttl: i64,
 }
 
 /// Production Cedar-backed harness kept as the default public type.
@@ -36,7 +41,17 @@ impl<E> PolicyHarness<E> {
             entity_store,
             trajectory_store,
             engine,
+            escalation: None,
+            escalation_ttl: 120,
         }
+    }
+
+    /// Attach an escalation admin state so that `Decision::Escalate` results are
+    /// persisted, broadcast via SSE, and notified via Slack.
+    pub fn with_escalation(mut self, state: Arc<AdminState>, ttl_secs: i64) -> Self {
+        self.escalation = Some(state);
+        self.escalation_ttl = ttl_secs;
+        self
     }
 
     pub fn engine(&self) -> &E {
@@ -207,7 +222,29 @@ impl<E: PolicyEngine> Harness for PolicyHarness<E> {
         }
 
         let evaluation = self.engine.evaluate(&event, &self.entity_store).await?;
-        let adjudicated = evaluation.adjudicated;
+        let mut adjudicated = evaluation.adjudicated.clone();
+
+        // When the engine escalates, create a persistent record and fire notifications.
+        // Surface the escalation ID in the response so clients can poll for approval.
+        if adjudicated.decision == Decision::Escalate {
+            if let Some(ref admin) = self.escalation {
+                let policy_ids: Vec<String> = adjudicated
+                    .annotations
+                    .iter()
+                    .filter_map(|a| a.policy_id.clone())
+                    .collect();
+                match admin
+                    .on_new_escalation(&event, &policy_ids, self.escalation_ttl)
+                    .await
+                {
+                    Ok(esc_id) => {
+                        debug!("Escalation created: {esc_id}");
+                        adjudicated.escalation_id = Some(esc_id);
+                    }
+                    Err(e) => warn!("Failed to create escalation record: {e}"),
+                }
+            }
+        }
 
         let adjudicated_event = Event::new(
             event.agent.clone(),
@@ -218,10 +255,15 @@ impl<E: PolicyEngine> Harness for PolicyHarness<E> {
         .with_causality(Causality::default().caused_by(&event.event_id))
         .with_raw(evaluation.raw);
 
-        let trajectory: Trajectory = match self.entity_store.get(&crate::cedar::entity::euid(
-            "Trajectory",
-            &event.trajectory_id,
-        )?)? {
+        // Collect any taint names emitted by matching forbid policies.
+        let new_taints: Vec<String> = adjudicated
+            .annotations
+            .iter()
+            .filter_map(|a| a.annotations.get("taint").cloned())
+            .collect();
+
+        let trajectory_uid = crate::cedar::entity::euid("Trajectory", &event.trajectory_id)?;
+        let mut trajectory: Trajectory = match self.entity_store.get(&trajectory_uid)? {
             Some(entity) => entity.try_into()?,
             None => {
                 debug!(
@@ -231,6 +273,22 @@ impl<E: PolicyEngine> Harness for PolicyHarness<E> {
                 Trajectory::new(&event.trajectory_id)
             }
         };
+
+        // Propagate taints — add any new taint names, deduplicating against existing ones.
+        if !new_taints.is_empty() {
+            let existing: std::collections::HashSet<String> =
+                trajectory.taints.iter().cloned().collect();
+            for taint in &new_taints {
+                if !existing.contains(taint) {
+                    debug!("Taint propagated to trajectory {}: {}", event.trajectory_id, taint);
+                    trajectory.taints.push(taint.clone());
+                }
+            }
+            // Persist the updated trajectory entity.
+            if let Err(e) = self.entity_store.upsert(&trajectory.clone().into_entity()?) {
+                warn!("Failed to persist taint propagation: {e}");
+            }
+        }
 
         debug!("Adjudicated Event: {:?}", adjudicated_event);
         debug!("Trajectory: {:?}", trajectory);

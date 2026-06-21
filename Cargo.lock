@@ -4593,6 +4593,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2 0.4.13",
@@ -5357,6 +5358,8 @@ dependencies = [
  "chrono",
  "clap",
  "dirs 5.0.1",
+ "ed25519-dalek",
+ "reqwest",
  "serde",
  "serde_json",
  "sondera-harness",
@@ -5427,6 +5430,7 @@ name = "sondera-harness"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "base64 0.22.1",
  "cedar-policy",
  "chrono",
@@ -5438,6 +5442,7 @@ dependencies = [
  "jsonwebtoken",
  "ollama-rs",
  "rand_core 0.6.4",
+ "reqwest",
  "schemars 1.2.1",
  "serde",
  "serde_json",
@@ -5452,6 +5457,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-serde",
+ "tokio-stream",
  "tracing",
  "tracing-subscriber",
  "turso",
@@ -5493,9 +5499,14 @@ dependencies = [
 name = "sondera-mcp"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cedar-policy",
+ "chrono",
+ "clap",
+ "reqwest",
  "serde",
  "serde_json",
+ "sondera-harness",
  "sondera-information-flow-control",
  "sondera-policy",
  "sondera-signature",
@@ -5503,6 +5514,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "turbomcp",
+ "uuid",
 ]
 
 [[package]]
@@ -6016,6 +6028,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

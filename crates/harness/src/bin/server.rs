@@ -4,14 +4,17 @@
 //! via Unix domain sockets.
 
 use anyhow::{Context as _, Result};
+use axum::serve;
 use clap::{Parser, ValueEnum};
 use sondera_harness::{
     AllowAllPolicyEngine, CedarPolicyHarness, CedarlingPolicyEngine, CedarlingPolicyHarness,
     MandatePolicyEngine, MandatePolicyHarness, PolicyHarness,
+    escalation::{EscalationStore, api::{AdminState, router, spawn_ttl_sweeper}},
     mandate::jwt::load_verifying_key,
     rpc,
 };
 use std::path::PathBuf;
+use std::time::Duration;
 use tracing_subscriber::fmt::format::FmtSpan;
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -50,6 +53,18 @@ struct Args {
     /// Enable verbose logging
     #[arg(short, long)]
     verbose: bool,
+
+    /// Port for the HTTP admin API (escalation approve/deny + SSE stream). 0 disables it.
+    #[arg(long, default_value_t = 9090)]
+    admin_port: u16,
+
+    /// Slack incoming webhook URL for escalation notifications.
+    #[arg(long)]
+    slack_webhook: Option<String>,
+
+    /// Default escalation TTL in seconds (auto-deny after this period).
+    #[arg(long, default_value_t = 120)]
+    escalation_ttl: u64,
 }
 
 #[tokio::main]
@@ -71,19 +86,46 @@ async fn main() -> Result<()> {
 
     let socket_path = args.socket.unwrap_or_else(rpc::default_socket_path);
 
+    // Escalation admin HTTP server (optional — disabled when admin_port == 0).
+    // Returns an Arc<AdminState> so each harness variant can attach it.
+    let escalation: Option<std::sync::Arc<AdminState>> = if args.admin_port > 0 {
+        let esc_store = EscalationStore::open_in_memory().await?;
+        let state = AdminState::new(esc_store, args.slack_webhook.clone(), args.admin_port)
+            .with_harness_socket(socket_path.clone());
+        let state = std::sync::Arc::new(state);
+        let app = router((*state).clone());
+        let addr: std::net::SocketAddr = ([127, 0, 0, 1], args.admin_port).into();
+        tracing::info!("Admin HTTP API listening on http://{addr}");
+        spawn_ttl_sweeper((*state).clone(), Duration::from_secs(30));
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::bind(addr).await.expect("admin bind");
+            serve(listener, app).await.expect("admin serve");
+            drop(state_clone);
+        });
+        Some(state)
+    } else {
+        None
+    };
+    let esc_ttl = args.escalation_ttl as i64;
+
     match args.policy_engine {
         PolicyEngineKind::Cedar => {
             tracing::info!("Loading Cedar policies from {:?}", args.policy_path);
-            let harness = CedarPolicyHarness::from_policy_dir(args.policy_path).await?;
-
+            let mut harness = CedarPolicyHarness::from_policy_dir(args.policy_path).await?;
+            if let Some(esc) = escalation {
+                harness = harness.with_escalation(esc, esc_ttl);
+            }
             tracing::info!("Starting Cedar-backed harness server on {:?}", socket_path);
             rpc::serve(harness, &socket_path).await?;
         }
         PolicyEngineKind::Cedarling => {
             tracing::info!("Loading Jans:: policies from {:?}", args.policy_path);
             let engine = CedarlingPolicyEngine::from_policy_dir(&args.policy_path)?;
-            let harness = CedarlingPolicyHarness::from_default_storage(engine).await?;
-
+            let mut harness = CedarlingPolicyHarness::from_default_storage(engine).await?;
+            if let Some(esc) = escalation {
+                harness = harness.with_escalation(esc, esc_ttl);
+            }
             tracing::info!("Starting Cedarling-backed harness server on {:?}", socket_path);
             rpc::serve(harness, &socket_path).await?;
         }
@@ -96,15 +138,16 @@ async fn main() -> Result<()> {
             tracing::info!("Loading Jans:: ceiling policies from {:?}", args.policy_path);
             let ceiling = CedarlingPolicyEngine::from_policy_dir(&args.policy_path)?;
             let engine = MandatePolicyEngine::new(ceiling, verifying_key);
-            let harness = MandatePolicyHarness::from_default_storage(engine).await?;
-
+            let mut harness = MandatePolicyHarness::from_default_storage(engine).await?;
+            if let Some(esc) = escalation {
+                harness = harness.with_escalation(esc, esc_ttl);
+            }
             tracing::info!("Starting mandate-backed harness server on {:?}", socket_path);
             rpc::serve(harness, &socket_path).await?;
         }
         PolicyEngineKind::AllowAll => {
             tracing::warn!("Starting harness with allow-all policy engine");
             let harness = PolicyHarness::from_default_storage(AllowAllPolicyEngine).await?;
-
             tracing::info!("Starting allow-all harness server on {:?}", socket_path);
             rpc::serve(harness, &socket_path).await?;
         }

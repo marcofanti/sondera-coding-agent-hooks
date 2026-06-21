@@ -530,6 +530,7 @@ impl CedarPolicyEngine {
             decision,
             reason,
             annotations,
+            escalation_id: None,
         }
     }
 }
