@@ -1,5 +1,10 @@
 use super::{EscalationRecord, EscalationStore, notify_slack};
 use crate::harness::Harness;
+use crate::observability::{
+    EventTelemetry, HTTP_ADJUDICATE_ROUTE, HTTP_APPROVE_ESCALATION_ROUTE,
+    HTTP_DENY_ESCALATION_ROUTE, HTTP_GET_ESCALATION_ROUTE, HTTP_LIST_ESCALATIONS_ROUTE,
+    HTTP_STREAM_ESCALATIONS_ROUTE, HttpRouteTelemetry,
+};
 use crate::rpc::HarnessClient;
 use axum::{
     Json, Router,
@@ -17,6 +22,7 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::BroadcastStream;
+use tracing::{Instrument, Span, field};
 
 // ─── App state ────────────────────────────────────────────────────────────────
 
@@ -111,13 +117,35 @@ async fn http_adjudicate(
     State(s): State<AdminState>,
     Json(event): Json<crate::Event>,
 ) -> Response {
-    match s.get_harness_client().await {
-        Err(e) => (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response(),
-        Ok(client) => match client.adjudicate(event).await {
-            Ok(adj) => Json(adj).into_response(),
-            Err(e)  => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-        },
+    let telemetry = EventTelemetry::from_event(&event);
+    let span = http_span(HTTP_ADJUDICATE_ROUTE);
+    span.record("trajectory.id", telemetry.trajectory_id);
+    span.record("event.id", telemetry.event_id);
+    span.record("agent.id", telemetry.agent_id);
+    span.record("agent.provider", telemetry.agent_provider);
+    span.record("event.category", telemetry.category);
+    span.record("event.type", telemetry.event_type);
+
+    async move {
+        match s.get_harness_client().await {
+            Err(e) => {
+                record_http_status(StatusCode::SERVICE_UNAVAILABLE);
+                (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response()
+            }
+            Ok(client) => match client.adjudicate(event).await {
+                Ok(adj) => {
+                    record_http_status(StatusCode::OK);
+                    Json(adj).into_response()
+                }
+                Err(e)  => {
+                    record_http_status(StatusCode::INTERNAL_SERVER_ERROR);
+                    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+                }
+            },
+        }
     }
+    .instrument(span)
+    .await
 }
 
 #[derive(Deserialize)]
@@ -129,19 +157,46 @@ async fn list_escalations(
     State(s): State<AdminState>,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<EscalationRecord>>, (StatusCode, String)> {
-    let filter = q.status.as_deref().and_then(|v| v.parse().ok());
-    s.store.list(filter).await.map(Json).map_err(internal)
+    async move {
+        let filter = q.status.as_deref().and_then(|v| v.parse().ok());
+        match s.store.list(filter).await.map(Json).map_err(internal) {
+            Ok(response) => {
+                record_http_status(StatusCode::OK);
+                Ok(response)
+            }
+            Err(err) => {
+                record_http_status(err.0);
+                Err(err)
+            }
+        }
+    }
+    .instrument(http_span(HTTP_LIST_ESCALATIONS_ROUTE))
+    .await
 }
 
 async fn get_escalation(
     State(s): State<AdminState>,
     Path(id): Path<String>,
 ) -> Result<Json<EscalationRecord>, (StatusCode, String)> {
-    match s.store.get(&id).await {
-        Ok(Some(r)) => Ok(Json(r)),
-        Ok(None)    => Err((StatusCode::NOT_FOUND, format!("escalation {id} not found"))),
-        Err(e)      => Err(internal(e)),
+    async move {
+        match s.store.get(&id).await {
+            Ok(Some(r)) => {
+                record_http_status(StatusCode::OK);
+                Ok(Json(r))
+            }
+            Ok(None)    => {
+                record_http_status(StatusCode::NOT_FOUND);
+                Err((StatusCode::NOT_FOUND, format!("escalation {id} not found")))
+            }
+            Err(e)      => {
+                let err = internal(e);
+                record_http_status(err.0);
+                Err(err)
+            }
+        }
     }
+    .instrument(http_span(HTTP_GET_ESCALATION_ROUTE))
+    .await
 }
 
 #[derive(Deserialize)]
@@ -154,12 +209,23 @@ async fn approve_escalation(
     Path(id): Path<String>,
     body: Option<Json<DecisionBody>>,
 ) -> Result<Json<EscalationRecord>, (StatusCode, String)> {
-    let who = body.as_ref().and_then(|b| b.decided_by.as_deref()).unwrap_or("operator");
-    let updated = s.store.approve(&id, who).await.map_err(internal)?;
-    if !updated {
-        return Err((StatusCode::CONFLICT, format!("escalation {id} is no longer pending")));
+    async move {
+        let who = body.as_ref().and_then(|b| b.decided_by.as_deref()).unwrap_or("operator");
+        let updated = match s.store.approve(&id, who).await.map_err(internal) {
+            Ok(updated) => updated,
+            Err(err) => {
+                record_http_status(err.0);
+                return Err(err);
+            }
+        };
+        if !updated {
+            record_http_status(StatusCode::CONFLICT);
+            return Err((StatusCode::CONFLICT, format!("escalation {id} is no longer pending")));
+        }
+        fetch_and_broadcast(&s, &id).await
     }
-    fetch_and_broadcast(&s, &id).await
+    .instrument(http_span(HTTP_APPROVE_ESCALATION_ROUTE))
+    .await
 }
 
 async fn deny_escalation(
@@ -167,22 +233,38 @@ async fn deny_escalation(
     Path(id): Path<String>,
     body: Option<Json<DecisionBody>>,
 ) -> Result<Json<EscalationRecord>, (StatusCode, String)> {
-    let who = body.as_ref().and_then(|b| b.decided_by.as_deref()).unwrap_or("operator");
-    let updated = s.store.deny(&id, who).await.map_err(internal)?;
-    if !updated {
-        return Err((StatusCode::CONFLICT, format!("escalation {id} is no longer pending")));
+    async move {
+        let who = body.as_ref().and_then(|b| b.decided_by.as_deref()).unwrap_or("operator");
+        let updated = match s.store.deny(&id, who).await.map_err(internal) {
+            Ok(updated) => updated,
+            Err(err) => {
+                record_http_status(err.0);
+                return Err(err);
+            }
+        };
+        if !updated {
+            record_http_status(StatusCode::CONFLICT);
+            return Err((StatusCode::CONFLICT, format!("escalation {id} is no longer pending")));
+        }
+        fetch_and_broadcast(&s, &id).await
     }
-    fetch_and_broadcast(&s, &id).await
+    .instrument(http_span(HTTP_DENY_ESCALATION_ROUTE))
+    .await
 }
 
 async fn sse_stream(
     State(s): State<AdminState>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
-    let rx = s.events_tx.subscribe();
-    let stream = BroadcastStream::new(rx)
-        .filter_map(|res| res.ok())
-        .map(|json| Ok(Event::default().data(json)));
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+    async move {
+        record_http_status(StatusCode::OK);
+        let rx = s.events_tx.subscribe();
+        let stream = BroadcastStream::new(rx)
+            .filter_map(|res| res.ok())
+            .map(|json| Ok(Event::default().data(json)));
+        Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+    }
+    .instrument(http_span(HTTP_STREAM_ESCALATIONS_ROUTE))
+    .await
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -191,13 +273,19 @@ async fn fetch_and_broadcast(
     s: &AdminState,
     id: &str,
 ) -> Result<Json<EscalationRecord>, (StatusCode, String)> {
-    let record = s
-        .store
-        .get(id)
-        .await
-        .map_err(internal)?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("escalation {id} not found")))?;
+    let record = match s.store.get(id).await.map_err(internal) {
+        Ok(Some(record)) => record,
+        Ok(None) => {
+            record_http_status(StatusCode::NOT_FOUND);
+            return Err((StatusCode::NOT_FOUND, format!("escalation {id} not found")));
+        }
+        Err(err) => {
+            record_http_status(err.0);
+            return Err(err);
+        }
+    };
     s.broadcast(&record);
+    record_http_status(StatusCode::OK);
     Ok(Json(record))
 }
 
@@ -211,6 +299,27 @@ pub async fn on_escalation_created(state: &AdminState, record: &EscalationRecord
 
 fn internal(e: anyhow::Error) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+}
+
+fn http_span(route: HttpRouteTelemetry) -> Span {
+    tracing::info_span!(
+        "harness.http.request",
+        "otel.kind" = "server",
+        "http.request.method" = route.method,
+        "http.route" = route.route,
+        "http.operation" = route.operation,
+        "http.response.status_code" = field::Empty,
+        "trajectory.id" = field::Empty,
+        "event.id" = field::Empty,
+        "agent.id" = field::Empty,
+        "agent.provider" = field::Empty,
+        "event.category" = field::Empty,
+        "event.type" = field::Empty
+    )
+}
+
+fn record_http_status(status: StatusCode) {
+    Span::current().record("http.response.status_code", status.as_u16());
 }
 
 // ─── Background TTL sweeper ───────────────────────────────────────────────────

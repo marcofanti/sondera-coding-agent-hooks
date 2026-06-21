@@ -4,6 +4,7 @@
 //! enabling IPC between client applications and the harness server.
 
 use crate::harness::Harness;
+use crate::observability::EventTelemetry;
 use crate::types::{Adjudicated, Event};
 use anyhow::Result;
 use futures::prelude::*;
@@ -12,6 +13,7 @@ use std::sync::Arc;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::{client, context};
 use tokio_serde::formats::Json;
+use tracing::Instrument;
 
 /// Default socket path for the harness IPC server.
 ///
@@ -60,10 +62,26 @@ impl<H: Harness + 'static> HarnessServer<H> {
 
 impl<H: Harness + 'static> HarnessService for HarnessServer<H> {
     async fn adjudicate(self, _: context::Context, event: Event) -> Result<Adjudicated, String> {
-        self.harness
-            .adjudicate(event)
-            .await
-            .map_err(|e| e.to_string())
+        let telemetry = EventTelemetry::from_event(&event);
+        let span = tracing::info_span!(
+            "harness.rpc.adjudicate",
+            "otel.kind" = "server",
+            "rpc.system" = "tarpc",
+            "sondera.trajectory_id" = %telemetry.trajectory_id,
+            "sondera.event_id" = %telemetry.event_id,
+            "sondera.agent_id" = %telemetry.agent_id,
+            "sondera.agent_provider" = %telemetry.agent_provider,
+            "sondera.event_category" = telemetry.category,
+            "sondera.event_type" = telemetry.event_type,
+        );
+        async move {
+            self.harness
+                .adjudicate(event)
+                .await
+                .map_err(|e| e.to_string())
+        }
+        .instrument(span)
+        .await
     }
 
     async fn health(self, _: context::Context) -> bool {

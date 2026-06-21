@@ -184,7 +184,7 @@ impl CedarlingPolicyEngine {
                         match key.to_string().as_str() {
                             "id" => {}
                             "decision" => {
-                                if value.to_string() == "escalate" {
+                                if value == "escalate" {
                                     escalate = true;
                                 }
                                 annotation =
@@ -213,7 +213,7 @@ impl CedarlingPolicyEngine {
                     .policy_set()
                     .policy(policy_id)
                     .and_then(|p| p.annotation("decision"))
-                    .map(|v| v.to_string() != "escalate")
+                    .map(|v| v != "escalate")
                     .unwrap_or(true) // missing annotation → hard deny
             });
 
@@ -296,19 +296,16 @@ impl PolicyEngine for CedarlingPolicyEngine {
 
         // IFC label propagation: if the guardrail classified a label higher than
         // the trajectory's current label, elevate and persist the trajectory entity.
-        if let Some(ref gctx) = guardrail_ctx {
-            if let Some(label_str) = gctx
+        if let Some(ref gctx) = guardrail_ctx
+            && let Some(label_str) = gctx
                 .get("label")
                 .and_then(|l| l.get("__entity"))
                 .and_then(|e| e.get("id"))
                 .and_then(|id| id.as_str())
-            {
-                if let Ok(new_label) = label_str.parse::<Label>() {
-                    if new_label != Label::default() {
-                        propagate_label(new_label, &event.trajectory_id, entity_store);
-                    }
-                }
-            }
+            && let Ok(new_label) = label_str.parse::<Label>()
+            && new_label != Label::default()
+        {
+            propagate_label(new_label, &event.trajectory_id, entity_store);
         }
 
         let reason_policies: Vec<String> = response
@@ -401,10 +398,10 @@ fn propagate_label(new_label: Label, trajectory_id: &str, entity_store: &EntityS
                 traj
             }
         };
-        if let Ok(entity) = updated.into_entity() {
-            if let Err(e) = entity_store.upsert(&entity) {
-                warn!("Failed to persist IFC label elevation: {e}");
-            }
+        if let Ok(entity) = updated.into_entity()
+            && let Err(e) = entity_store.upsert(&entity)
+        {
+            warn!("Failed to persist IFC label elevation: {e}");
         }
     }
 }

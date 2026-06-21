@@ -41,7 +41,11 @@ thiserror = "2"
 tarpc = { version = "0.37", features = ["tokio1", "serde1", "serde-transport", "unix"] }
 tokio-serde = { version = "0.9", features = ["json"] }
 futures = "0.3"
+opentelemetry = "0.32"
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "http-proto", "reqwest-client"] }
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 tracing = "0.1"
+tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.5", features = ["derive"] }
 shlex = "1"

@@ -27,6 +27,7 @@ pub mod cedarling;
 pub mod escalation;
 mod harness;
 pub mod mandate;
+pub mod observability;
 mod policy_engine;
 mod policy_harness;
 pub mod rpc;
@@ -40,10 +41,12 @@ pub use types::*;
 pub use cedar::CedarPolicyEngine;
 pub use cedar::entity::{EntityBuilder, Trajectory, euid, json_to_restricted_expr};
 pub use cedarling::CedarlingPolicyEngine;
-pub use mandate::MandatePolicyEngine;
 pub use harness::Harness;
+pub use mandate::MandatePolicyEngine;
 pub use policy_engine::{AllowAllPolicyEngine, PolicyEngine, PolicyEvaluation, SyncAuthorize};
-pub use policy_harness::{CedarPolicyHarness, CedarlingPolicyHarness, MandatePolicyHarness, PolicyHarness};
+pub use policy_harness::{
+    CedarPolicyHarness, CedarlingPolicyHarness, MandatePolicyHarness, PolicyHarness,
+};
 pub use rpc::HarnessClient;
 pub use sondera_information_flow_control::Label;
 
