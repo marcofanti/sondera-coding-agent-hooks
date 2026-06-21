@@ -14,6 +14,11 @@ Works with [Claude Code](https://code.claude.com/docs/en/hooks),
 [GitHub Copilot](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/use-hooks),
 and [Gemini CLI](https://geminicli.com/docs/hooks/).
 
+**This repository** is a fork of [sondera-ai/sondera-coding-agent-hooks](https://github.com/sondera-ai/sondera-coding-agent-hooks)
+extended with: live guardrail wiring into Cedar context, taint and IFC label propagation,
+a real-time escalation infrastructure, communication/browser Cedar policies, and a Python SDK
+for LangChain and autonomous agent frameworks.
+
 ## Getting Started
 
 ### Prerequisites
@@ -131,6 +136,12 @@ policies/
 │                          #   step-count limits scaled by data classification level
 ├── supply_chain_risk.cedar # Supply chain attack detection: typosquatting, dependency confusion,
 │                          #   build script injection, lock file tampering, and registry exfiltration
+├── communication.cedar    # Email and calendar action rules: exfiltration guards, IFC label blocks,
+│                          #   escalation for delete_event; covers send_email, read_email,
+│                          #   list_emails, read_calendar, create_event, update_event, delete_event
+├── browser.cedar          # Browser/Playwright action rules: submit_form always escalates,
+│                          #   evaluate_script severity gate, navigate with exfil taint blocks;
+│                          #   covers navigate, fill_form, submit_form, evaluate_script, take_screenshot
 ├── ifc.toml               # Prompt templates for LLM-based data classification
 └── policies.toml          # Prompt templates for LLM-based secure code generation evaluation
 ```
@@ -168,7 +179,96 @@ backward compatibility. Loads `.cedarschema` and `.cedar` files from `policies/`
 cargo run --bin sondera-harness-server -- --policy-engine cedar -v
 ```
 
-### 4. Examples
+### 4. Real-Time Escalation
+
+When a Cedar policy fires `@decision("escalate")`, the harness stores the pending decision
+in a Turso/libsql table and returns an `escalation_id` to the agent. An operator approves
+or denies via the admin HTTP API (or the `escalations` CLI subcommand). Unresolved
+escalations expire after a configurable TTL and auto-deny.
+
+Start the harness with the admin API enabled:
+
+```bash
+cargo run --bin sondera-harness-server -- --policy-engine cedarling --admin-port 9090 -v
+```
+
+Manage escalations from the CLI:
+
+```bash
+# List pending escalations
+cargo run -p sondera-claude -- escalations list
+
+# Show full event payload for an escalation
+cargo run -p sondera-claude -- escalations show <id>
+
+# Approve or deny
+cargo run -p sondera-claude -- escalations approve <id> --decided-by alice
+cargo run -p sondera-claude -- escalations deny   <id> --decided-by alice
+```
+
+Real-time notifications are available via Server-Sent Events at `GET /api/escalations/stream`.
+
+### 5. Mandate JWTs
+
+Operators can issue per-agent Ed25519-signed mandate JWTs to scope an agent's permissions to
+a Cedar policy subset before a mission begins:
+
+```bash
+cargo run -p sondera-claude -- mandate sign \
+  --signing-key /etc/sondera/mandate.pem \
+  --agent-id hermes-agent-1 \
+  --policy policies/base.cedar \
+  --exp 3600
+```
+
+The agent sets `SONDERA_MANDATE_JWT` in its environment. The `mandate` policy engine variant
+verifies the JWT and evaluates both the ceiling and the mandate — both must allow.
+
+### 6. Python SDK
+
+A Python SDK lets LangChain, LangGraph, and other autonomous agent frameworks gate tool calls
+through the harness without writing Rust:
+
+```bash
+pip install sondera-harness
+```
+
+```python
+from sondera import PolicyGate, Action, Observation
+
+gate = PolicyGate(socket="/var/run/sondera/sondera-harness.sock")
+
+with gate.trajectory(agent_id="my-agent", provider_id="ollama") as traj:
+    decision = traj.adjudicate(Action.shell_command("ls /tmp"))
+    if decision.allow:
+        result = subprocess.run(["ls", "/tmp"], capture_output=True, text=True)
+        traj.observe(Observation.shell_output(
+            call_id=decision.call_id,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            exit_code=result.returncode,
+        ))
+```
+
+**Async variant** (for asyncio-based agents):
+
+```python
+from sondera import AsyncPolicyGate, Action
+
+async with AsyncPolicyGate(socket=...).trajectory(...) as traj:
+    decision = await traj.adjudicate(Action.tool_call("read_file", {"path": "/tmp/data.csv"}))
+```
+
+**LangChain integration** — wraps any `BaseTool` transparently:
+
+```python
+from sondera.langchain import PolicyGateTool
+from langchain_community.tools import ShellTool
+
+safe_shell = PolicyGateTool(gate=gate, tool=ShellTool(), agent_id="lc-agent")
+```
+
+### 7. Examples
 
 The `examples/` directory contains standalone policies, payloads, and runnable
 hook examples.
@@ -206,6 +306,32 @@ All three combine guardrail signals with entity state from the **Fjall key-value
 store** and return an adjudication (Allow / Deny / Escalate) back through the
 hook binary to the agent.
 
+#### Guardrail → Cedar context wiring
+
+Before Cedar evaluation, the harness runs YARA-X on the event's content and feeds
+the results directly into the Cedar request context:
+
+```
+event content
+  → YARA-X scan           → context.signature.{severity, categories, matches}
+  → IFC label classifier  → context.label (Public … HighlyConfidential)
+  → policy classifier     → context.policy.{compliant, violations}
+```
+
+If the hook binary pre-computed these fields (closer to the content), its values
+win and the harness fills only what's missing. Cedar `forbid` policies can then
+reference `context.signature.categories.contains("exfiltration")` directly.
+
+#### Taint and IFC label propagation
+
+When a `forbid` policy carries `@taint("name")`, the harness appends that label to
+the trajectory's `taints` set in the entity store. Future events on the same trajectory
+carry the accumulated taints in `context.trajectory.taints`, enabling compound policies
+like "deny outbound calls on any exfiltration-tainted trajectory."
+
+When the IFC classifier assigns a sensitivity label higher than the trajectory's current
+label, the trajectory's label is elevated in the entity store and persists across events.
+
 ### Event Model
 
 ![Event model](docs/event.png)
@@ -236,18 +362,19 @@ identically across all four agents.
 
 ## Workspace
 
-| Crate                         | Purpose                                                              |
+| Path                          | Purpose                                                              |
 |-------------------------------|----------------------------------------------------------------------|
-| `crates/harness`              | Configurable policy engine harness, entity store, trajectory storage, tarpc RPC |
+| `crates/harness`              | Configurable policy engine harness, entity store, trajectory storage, tarpc RPC, escalation store, admin HTTP API |
 | `crates/guardrails/signature` | YARA-X signature scanning (prompt injection, exfiltration, secrets)  |
 | `crates/guardrails/ifc`       | LLM-based data classification (Microsoft Purview sensitivity labels) |
 | `crates/guardrails/policy`    | LLM-based policy evaluation (secure code generation categories)      |
 | `crates/common`               | Shared I/O utilities for hook binaries (stdin/stdout JSON, tracing)  |
 | `crates/mcp`                  | MCP server for interactive Cedar policy authoring                    |
-| `apps/claude`                 | Claude Code hooks                                                    |
+| `apps/claude`                 | Claude Code hooks + `escalations` and `mandate` CLI subcommands      |
 | `apps/cursor`                 | Cursor hooks                                                         |
 | `apps/copilot`                | GitHub Copilot hooks                                                 |
 | `apps/gemini`                 | Gemini CLI hooks                                                     |
+| `sondera-python`              | Python SDK: sync/async `PolicyGate`, `Trajectory`, `Observation` factory, LangChain wrapper |
 
 ## Development
 

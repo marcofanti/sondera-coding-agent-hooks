@@ -2,6 +2,26 @@
 
 **Last updated:** 2026-06-21  
 **Branch:** main  
+**Fork:** https://github.com/marcofanti/sondera-coding-agent-hooks  
+**Upstream:** https://github.com/sondera-ai/sondera-coding-agent-hooks  
+
+---
+
+## Fork Workflow
+
+This repo is a fork of `sondera-ai/sondera-coding-agent-hooks`. The fork lives at
+`marcofanti/sondera-coding-agent-hooks`. To keep it in sync with upstream:
+
+```bash
+# One-time setup
+git remote add upstream https://github.com/sondera-ai/sondera-coding-agent-hooks.git
+
+# Pull in upstream changes
+git fetch upstream && git merge upstream/main
+
+# Push to fork
+git push origin main
+```
 
 ---
 
