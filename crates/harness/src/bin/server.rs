@@ -9,13 +9,16 @@ use clap::{Parser, ValueEnum};
 use sondera_harness::{
     AllowAllPolicyEngine, CedarPolicyHarness, CedarlingPolicyEngine, CedarlingPolicyHarness,
     MandatePolicyEngine, MandatePolicyHarness, PolicyHarness,
-    escalation::{EscalationStore, api::{AdminState, router, spawn_ttl_sweeper}},
+    escalation::{
+        EscalationStore,
+        api::{AdminState, router, spawn_ttl_sweeper},
+    },
     mandate::jwt::load_verifying_key,
+    observability::{ObservabilityConfig, ObservabilityOptions, OtelProtocol, ProcessEnv},
     rpc,
 };
 use std::path::PathBuf;
 use std::time::Duration;
-use tracing_subscriber::fmt::format::FmtSpan;
 
 #[derive(Clone, Debug, ValueEnum)]
 enum PolicyEngineKind {
@@ -65,24 +68,43 @@ struct Args {
     /// Default escalation TTL in seconds (auto-deny after this period).
     #[arg(long, default_value_t = 120)]
     escalation_ttl: u64,
+
+    /// Enable OpenTelemetry trace export.
+    #[arg(long)]
+    otel: bool,
+
+    /// OTLP endpoint. Defaults to OTEL_EXPORTER_OTLP_TRACES_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT.
+    #[arg(long)]
+    otel_endpoint: Option<String>,
+
+    /// OTLP transport protocol.
+    #[arg(long, value_enum, default_value_t = OtelProtocol::Grpc)]
+    otel_protocol: OtelProtocol,
+
+    /// OpenTelemetry service name. Defaults to OTEL_SERVICE_NAME or sondera-harness.
+    #[arg(long)]
+    otel_service_name: Option<String>,
+
+    /// Enable OpenTelemetry metric export.
+    #[arg(long)]
+    otel_metrics: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Initialize logging.
-    let filter = if args.verbose {
-        tracing_subscriber::EnvFilter::new("info,tarpc=warn,sondera=debug")
-    } else {
-        tracing_subscriber::EnvFilter::new("warn")
-    };
-
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(false)
-        .with_span_events(FmtSpan::CLOSE)
-        .init();
+    let otel_config = ObservabilityConfig::from_options_and_env(
+        ObservabilityOptions {
+            enabled: args.otel,
+            endpoint: args.otel_endpoint.clone(),
+            protocol: args.otel_protocol,
+            service_name: args.otel_service_name.clone(),
+            metrics_enabled: args.otel_metrics,
+        },
+        &ProcessEnv,
+    );
+    let _observability = sondera_harness::observability::init(&otel_config, args.verbose)?;
 
     let socket_path = args.socket.unwrap_or_else(rpc::default_socket_path);
 
@@ -99,7 +121,9 @@ async fn main() -> Result<()> {
         spawn_ttl_sweeper((*state).clone(), Duration::from_secs(30));
         let state_clone = state.clone();
         tokio::spawn(async move {
-            let listener = tokio::net::TcpListener::bind(addr).await.expect("admin bind");
+            let listener = tokio::net::TcpListener::bind(addr)
+                .await
+                .expect("admin bind");
             serve(listener, app).await.expect("admin serve");
             drop(state_clone);
         });
@@ -126,7 +150,10 @@ async fn main() -> Result<()> {
             if let Some(esc) = escalation {
                 harness = harness.with_escalation(esc, esc_ttl);
             }
-            tracing::info!("Starting Cedarling-backed harness server on {:?}", socket_path);
+            tracing::info!(
+                "Starting Cedarling-backed harness server on {:?}",
+                socket_path
+            );
             rpc::serve(harness, &socket_path).await?;
         }
         PolicyEngineKind::Mandate => {
@@ -135,14 +162,20 @@ async fn main() -> Result<()> {
                 .context("--mandate-pub-key <path> is required when --policy-engine mandate")?;
             let verifying_key = load_verifying_key(&key_path)?;
 
-            tracing::info!("Loading Jans:: ceiling policies from {:?}", args.policy_path);
+            tracing::info!(
+                "Loading Jans:: ceiling policies from {:?}",
+                args.policy_path
+            );
             let ceiling = CedarlingPolicyEngine::from_policy_dir(&args.policy_path)?;
             let engine = MandatePolicyEngine::new(ceiling, verifying_key);
             let mut harness = MandatePolicyHarness::from_default_storage(engine).await?;
             if let Some(esc) = escalation {
                 harness = harness.with_escalation(esc, esc_ttl);
             }
-            tracing::info!("Starting mandate-backed harness server on {:?}", socket_path);
+            tracing::info!(
+                "Starting mandate-backed harness server on {:?}",
+                socket_path
+            );
             rpc::serve(harness, &socket_path).await?;
         }
         PolicyEngineKind::AllowAll => {

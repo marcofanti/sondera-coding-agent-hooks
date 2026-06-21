@@ -1,9 +1,10 @@
 use crate::cedar::CedarPolicyEngine;
+use crate::cedar::entity::Trajectory;
 use crate::cedarling::CedarlingPolicyEngine;
 use crate::escalation::api::AdminState;
-use crate::mandate::MandatePolicyEngine;
-use crate::cedar::entity::Trajectory;
 use crate::harness::Harness;
+use crate::mandate::MandatePolicyEngine;
+use crate::observability::{EventTelemetry, decision_name, record_adjudication_metrics};
 use crate::policy_engine::PolicyEngine;
 use crate::storage::entity::EntityStore;
 use crate::storage::file;
@@ -14,6 +15,7 @@ use cedar_policy::{Entity, EntityId, EntityUid, PolicySet, Schema};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::{debug, instrument, warn};
 
 /// Harness runtime parameterized by a pluggable policy engine.
@@ -203,9 +205,19 @@ impl<E: PolicyEngine> Harness for PolicyHarness<E> {
             event_id = %event.event_id,
             agent = %event.agent.id,
             policy_engine = %self.engine.name(),
+            event_category = tracing::field::Empty,
+            event_type = tracing::field::Empty,
+            decision = tracing::field::Empty,
+            policy_ids = tracing::field::Empty,
+            annotation_count = tracing::field::Empty,
         )
     )]
     async fn adjudicate(&self, event: Event) -> Result<Adjudicated> {
+        let started_at = Instant::now();
+        let event_telemetry = EventTelemetry::from_event(&event);
+        let span = tracing::Span::current();
+        span.record("event_category", event_telemetry.category);
+        span.record("event_type", event_telemetry.event_type);
         debug!("Trajectory Event: {:?}", event);
         self.ensure_agent_entity(&event.agent)?;
 
@@ -218,7 +230,16 @@ impl<E: PolicyEngine> Harness for PolicyHarness<E> {
                 let trajectory = Trajectory::new(&event.trajectory_id);
                 self.upsert_entity(trajectory.into_entity()?)?;
             }
-            return Ok(Adjudicated::allow());
+            let adjudicated = Adjudicated::allow();
+            span.record("decision", decision_name(adjudicated.decision));
+            span.record("annotation_count", adjudicated.annotations.len());
+            record_adjudication_metrics(
+                self.engine.name(),
+                adjudicated.decision,
+                &event,
+                started_at.elapsed(),
+            );
+            return Ok(adjudicated);
         }
 
         let evaluation = self.engine.evaluate(&event, &self.entity_store).await?;
@@ -226,25 +247,36 @@ impl<E: PolicyEngine> Harness for PolicyHarness<E> {
 
         // When the engine escalates, create a persistent record and fire notifications.
         // Surface the escalation ID in the response so clients can poll for approval.
-        if adjudicated.decision == Decision::Escalate {
-            if let Some(ref admin) = self.escalation {
-                let policy_ids: Vec<String> = adjudicated
-                    .annotations
-                    .iter()
-                    .filter_map(|a| a.policy_id.clone())
-                    .collect();
-                match admin
-                    .on_new_escalation(&event, &policy_ids, self.escalation_ttl)
-                    .await
-                {
-                    Ok(esc_id) => {
-                        debug!("Escalation created: {esc_id}");
-                        adjudicated.escalation_id = Some(esc_id);
-                    }
-                    Err(e) => warn!("Failed to create escalation record: {e}"),
+        if adjudicated.decision == Decision::Escalate
+            && let Some(ref admin) = self.escalation
+        {
+            let policy_ids: Vec<String> = adjudicated
+                .annotations
+                .iter()
+                .filter_map(|a| a.policy_id.clone())
+                .collect();
+            match admin
+                .on_new_escalation(&event, &policy_ids, self.escalation_ttl)
+                .await
+            {
+                Ok(esc_id) => {
+                    debug!("Escalation created: {esc_id}");
+                    adjudicated.escalation_id = Some(esc_id);
                 }
+                Err(e) => warn!("Failed to create escalation record: {e}"),
             }
         }
+
+        let policy_ids = EventTelemetry::policy_ids(&adjudicated).join(",");
+        span.record("decision", decision_name(adjudicated.decision));
+        span.record("policy_ids", policy_ids);
+        span.record("annotation_count", adjudicated.annotations.len());
+        record_adjudication_metrics(
+            self.engine.name(),
+            adjudicated.decision,
+            &event,
+            started_at.elapsed(),
+        );
 
         let adjudicated_event = Event::new(
             event.agent.clone(),
@@ -280,7 +312,10 @@ impl<E: PolicyEngine> Harness for PolicyHarness<E> {
                 trajectory.taints.iter().cloned().collect();
             for taint in &new_taints {
                 if !existing.contains(taint) {
-                    debug!("Taint propagated to trajectory {}: {}", event.trajectory_id, taint);
+                    debug!(
+                        "Taint propagated to trajectory {}: {}",
+                        event.trajectory_id, taint
+                    );
                     trajectory.taints.push(taint.clone());
                 }
             }

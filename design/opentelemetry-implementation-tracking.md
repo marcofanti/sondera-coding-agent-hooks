@@ -16,21 +16,23 @@ Implement the first server-side phase of `design/opentelemetry-observability.md`
 - safe event classification helpers
 - low-cardinality adjudication metrics
 - safe RPC and adjudication span fields
+- safe HTTP admin endpoint span fields
 
-The committed base branch does not include the uncommitted escalation admin API
-currently present in the primary worktree, so HTTP admin endpoint
-instrumentation remains a follow-up.
+The branch is rebased onto the mainline escalation infrastructure. This pass
+instruments the harness server startup, tarpc adjudication boundary, HTTP admin
+endpoint boundary, and core adjudication hot path.
 
 ## Work Items
 
 | ID | Status | Item |
 |----|--------|------|
-| OTel-1 | In progress | Add tests for observability configuration and safe event metadata |
-| OTel-2 | Pending | Add `observability` module with config, subscriber, metrics, and shutdown guard |
-| OTel-3 | Pending | Wire server CLI args and replace inline subscriber initialization |
-| OTel-4 | Pending | Add safe RPC/adjudication span fields |
-| OTel-5 | Pending | Record adjudication counters and duration histograms |
-| OTel-6 | Pending | Run focused tests and cargo checks |
+| OTel-1 | Done | Add tests for observability configuration and safe event metadata |
+| OTel-2 | Done | Add `observability` module with config, subscriber, metrics, and shutdown guard |
+| OTel-3 | Done | Wire server CLI args and replace inline subscriber initialization |
+| OTel-4 | Done | Add safe RPC/adjudication span fields |
+| OTel-5 | Done | Record adjudication counters and duration histograms |
+| OTel-6 | Done | Add safe HTTP admin endpoint spans with stable route labels |
+| OTel-7 | Done | Run focused tests and cargo checks |
 
 ## Notes
 
@@ -38,4 +40,3 @@ instrumentation remains a follow-up.
   arguments, raw event JSON, or mandate JWTs.
 - Metric labels must not include `event_id`, `trajectory_id`, `agent_id`, file
   paths, URLs, commands, or raw policy descriptions.
-
