@@ -5,6 +5,8 @@
 // Enforces lattice-based information flow control to prevent
 // sensitive data from leaking through outbound channels.
 //
+// Namespace: Jans:: (aligned with jans-cedarling / carapace)
+//
 // Model: simplified Bell-LaPadula "no write down" / "no read up"
 // adapted for AI agent trajectories. Once a trajectory ingests
 // data at a given sensitivity level, its label is raised to
@@ -13,297 +15,261 @@
 //
 // ─── Sensitivity Lattice ────────────────────────────────
 //
-//   Label::"HighlyConfidential"   (level 3) — PII, credentials, trade secrets
-//   Label::"Confidential"         (level 2) — business strategy, customer data
-//   Label::"Internal"             (level 1) — internal docs, meeting notes
-//   Label::"Public"               (level 0) — freely shareable
+//   Jans::Label::"HighlyConfidential"   (level 3)
+//   Jans::Label::"Confidential"         (level 2)
+//   Jans::Label::"Internal"             (level 1)
+//   Jans::Label::"Public"               (level 0)
+//
+// ─── Resource / Context mapping ─────────────────────────
+//
+//   exec_command / observe_exec_output → resource = Jans::Shell
+//   call_api / observe_api_output      → resource = Jans::API
+//   observe_tool_output                → resource = Jans::Tool
+//   Trajectory state (label, step_count, taints) → context.trajectory
+//   (resource is no longer Jans::Trajectory — use context.trajectory.*)
 //
 // ─── Outbound Channels Controlled ───────────────────────
 //
-//   WebFetch / WebFetchOutput  — HTTP requests to external URLs
-//   ShellCommand               — network tools (curl, wget, nc, ssh, scp, etc.)
-//   ShellCommandOutput         — output from network commands
-//
-// ─── Design Principles ─────────────────────────────────
-//
-//   1. HighlyConfidential trajectories are fully blocked from
-//      all outbound channels — no HTTP fetches, no network
-//      shell commands, regardless of signatures.
-//
-//   2. Confidential trajectories are blocked from outbound
-//      channels unless the content is clean (no signature
-//      matches), providing defense-in-depth while allowing
-//      legitimate development workflows.
-//
-//   3. Taint tracking compounds with signature detection:
-//      trajectories tainted with exfiltration or credential
-//      access get stricter controls at lower severity
-//      thresholds.
-//
-//   4. Post-execution guards prevent ingesting fetched
-//      content that would raise a clean trajectory's label,
-//      stopping taint propagation at the boundary.
+//   call_api / observe_api_output   — HTTP requests to external URLs
+//   exec_command                    — network tools (curl, wget, nc, etc.)
+//   observe_exec_output             — output from network commands
 
 // ═══════════════════════════════════════════════════════
-// §1  WebFetch – Sensitivity-Gated Outbound Blocking
+// §1  call_api – Sensitivity-Gated Outbound Blocking
 // ═══════════════════════════════════════════════════════
-//
-// WebFetch is the primary HTTP outbound channel. An agent
-// that has read highly confidential data must not make
-// external HTTP requests — even "innocent" fetches could
-// encode sensitive data in URLs, headers, or prompt text.
 
 @id("ifc-forbid-webfetch-highly-confidential")
-@description("IFC: block all web fetches when trajectory carries highly confidential data — unconditional outbound lockdown.")
+@description("IFC: block all web/API fetches when trajectory carries highly confidential data — unconditional outbound lockdown.")
 forbid (
     principal,
-    action == Action::"WebFetch",
+    action == Jans::Action::"call_api",
     resource
 ) when {
-    resource.label == Label::"HighlyConfidential"
+    context.trajectory.label == Jans::Label::"HighlyConfidential"
 };
 
 @id("ifc-forbid-webfetch-confidential-with-signatures")
-@description("IFC: block web fetches on confidential trajectories when YARA signatures detected — prevents data leakage via HTTP when content shows threat indicators.")
+@description("IFC: block API fetches on confidential trajectories when YARA signatures detected.")
 forbid (
     principal,
-    action == Action::"WebFetch",
+    action == Jans::Action::"call_api",
     resource
 ) when {
-    resource.label == Label::"Confidential" &&
+    context.trajectory.label == Jans::Label::"Confidential" &&
     context.signature.matches > 0
 };
 
 @id("ifc-forbid-webfetch-confidential-with-exfil-taint")
-@description("IFC: block web fetches on confidential trajectories tainted with exfiltration — trajectory has already shown exfiltration intent.")
+@description("IFC: block API fetches on confidential trajectories tainted with exfiltration.")
 forbid (
     principal,
-    action == Action::"WebFetch",
+    action == Jans::Action::"call_api",
     resource
 ) when {
-    resource.label == Label::"Confidential" &&
-    resource.taints.contains(Taint::"exfiltration")
+    context.trajectory.label == Jans::Label::"Confidential" &&
+    context.trajectory.taints.contains(Jans::Taint::"exfiltration")
 };
 
 @id("ifc-forbid-webfetch-confidential-with-cred-taint")
-@description("IFC: block web fetches on confidential trajectories tainted with credential access — prevents credential exfiltration via HTTP.")
+@description("IFC: block API fetches on confidential trajectories tainted with credential access.")
 forbid (
     principal,
-    action == Action::"WebFetch",
+    action == Jans::Action::"call_api",
     resource
 ) when {
-    resource.label == Label::"Confidential" &&
-    resource.taints.contains(Taint::"credential_access")
+    context.trajectory.label == Jans::Label::"Confidential" &&
+    context.trajectory.taints.contains(Jans::Taint::"credential_access")
 };
 
 // ═══════════════════════════════════════════════════════
-// §2  WebFetchOutput – Taint Propagation Guards
+// §2  observe_api_output – Taint Propagation Guards
 // ═══════════════════════════════════════════════════════
-//
-// Even if a WebFetch was allowed, the returned content
-// could carry sensitive data back into the trajectory.
-// These guards prevent escalation of the trajectory's
-// sensitivity through fetched content.
 
 @id("ifc-forbid-webfetch-output-raises-to-highly-confidential")
-@description("IFC: block web fetch results classified as highly confidential — prevents taint escalation to highest level via external content.")
+@description("IFC: block API fetch results classified as highly confidential — prevents taint escalation via external content.")
 forbid (
     principal,
-    action == Action::"WebFetchOutput",
+    action == Jans::Action::"observe_api_output",
     resource
 ) when {
-    context.label == Label::"HighlyConfidential"
+    context.label == Jans::Label::"HighlyConfidential"
 };
 
 @id("ifc-forbid-webfetch-output-on-tainted-trajectory")
-@description("IFC: block web fetch results when trajectory is already tainted with exfiltration — stops further data ingestion on compromised trajectories.")
+@description("IFC: block API fetch results when trajectory is already tainted with exfiltration.")
 forbid (
     principal,
-    action == Action::"WebFetchOutput",
+    action == Jans::Action::"observe_api_output",
     resource
 ) when {
-    resource.taints.contains(Taint::"exfiltration") &&
+    context.trajectory.taints.contains(Jans::Taint::"exfiltration") &&
     context.signature.severity >= 2
 };
 
 @id("ifc-forbid-webfetch-output-confidential-with-secrets")
-@description("IFC: block web fetch results containing secrets on confidential trajectories — prevents credential accumulation from external sources.")
+@description("IFC: block API fetch results containing secrets on confidential trajectories.")
 forbid (
     principal,
-    action == Action::"WebFetchOutput",
+    action == Jans::Action::"observe_api_output",
     resource
 ) when {
-    resource.label == Label::"Confidential" &&
+    context.trajectory.label == Jans::Label::"Confidential" &&
     context.signature.categories.contains("secrets_detection")
 };
 
 // ═══════════════════════════════════════════════════════
-// §3  ShellCommand – Network Tool Blocking
+// §3  exec_command – Network Tool Blocking
 // ═══════════════════════════════════════════════════════
-//
-// Shell commands that invoke network tools are an alternate
-// exfiltration channel to WebFetch. Block these when the
-// trajectory carries sensitive data.
 
 @id("ifc-forbid-shell-network-highly-confidential")
-@description("IFC: block network shell commands (curl, wget, ssh, scp, nc, rsync, ftp) when trajectory is highly confidential — prevents exfiltration via shell network tools.")
+@description("IFC: block network shell commands (curl, wget, ssh, scp, nc, rsync, ftp) when trajectory is highly confidential.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
-    resource.label == Label::"HighlyConfidential" &&
-    (context.command like "*curl *" ||
-     context.command like "*wget *" ||
-     context.command like "*ssh *" ||
-     context.command like "*scp *" ||
-     context.command like "*sftp *" ||
-     context.command like "*rsync *" ||
-     context.command like "*nc *" ||
-     context.command like "*ncat *" ||
-     context.command like "*netcat *" ||
-     context.command like "*ftp *" ||
-     context.command like "*telnet *" ||
+    context.trajectory.label == Jans::Label::"HighlyConfidential" &&
+    (context.command like "*curl *"    ||
+     context.command like "*wget *"    ||
+     context.command like "*ssh *"     ||
+     context.command like "*scp *"     ||
+     context.command like "*sftp *"    ||
+     context.command like "*rsync *"   ||
+     context.command like "*nc *"      ||
+     context.command like "*ncat *"    ||
+     context.command like "*netcat *"  ||
+     context.command like "*ftp *"     ||
+     context.command like "*telnet *"  ||
      context.command like "*socat *")
 };
 
 @id("ifc-forbid-shell-network-confidential-with-taint")
-@description("IFC: block network shell commands on confidential trajectories tainted with exfiltration — compound guard on network + exfil intent.")
+@description("IFC: block network shell commands on confidential trajectories tainted with exfiltration.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
-    resource.label == Label::"Confidential" &&
-    resource.taints.contains(Taint::"exfiltration") &&
-    (context.command like "*curl *" ||
-     context.command like "*wget *" ||
-     context.command like "*ssh *" ||
-     context.command like "*scp *" ||
-     context.command like "*sftp *" ||
-     context.command like "*rsync *" ||
-     context.command like "*nc *" ||
-     context.command like "*ncat *" ||
+    context.trajectory.label == Jans::Label::"Confidential" &&
+    context.trajectory.taints.contains(Jans::Taint::"exfiltration") &&
+    (context.command like "*curl *"   ||
+     context.command like "*wget *"   ||
+     context.command like "*ssh *"    ||
+     context.command like "*scp *"    ||
+     context.command like "*sftp *"   ||
+     context.command like "*rsync *"  ||
+     context.command like "*nc *"     ||
+     context.command like "*ncat *"   ||
      context.command like "*netcat *" ||
      context.command like "*ftp *")
 };
 
 @id("ifc-forbid-shell-pipe-network-highly-confidential")
-@description("IFC: block shell commands piping to network tools when trajectory is highly confidential — prevents exfiltration via pipe chains.")
+@description("IFC: block shell commands piping to network tools when trajectory is highly confidential.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
-    resource.label == Label::"HighlyConfidential" &&
-    (context.command like "*| curl *" ||
-     context.command like "*| wget *" ||
-     context.command like "*| nc *" ||
-     context.command like "*| ssh *" ||
+    context.trajectory.label == Jans::Label::"HighlyConfidential" &&
+    (context.command like "*| curl *"  ||
+     context.command like "*| wget *"  ||
+     context.command like "*| nc *"    ||
+     context.command like "*| ssh *"   ||
      context.command like "*| socat *")
 };
 
 // ═══════════════════════════════════════════════════════
-// §4  ShellCommandOutput – Network Output Guards
+// §4  observe_exec_output – Network Output Guards
 // ═══════════════════════════════════════════════════════
-//
-// Guard the output side of network commands to detect
-// successful exfiltration or ingestion of sensitive data
-// from external sources.
 
 @id("ifc-forbid-shell-output-secrets-on-sensitive-trajectory")
-@description("IFC: block shell output containing secrets when trajectory carries confidential or higher data — prevents credential accumulation on sensitive trajectories.")
+@description("IFC: block shell output containing secrets when trajectory carries confidential or higher data.")
 forbid (
     principal,
-    action == Action::"ShellCommandOutput",
+    action == Jans::Action::"observe_exec_output",
     resource
 ) when {
-    (resource.label == Label::"Confidential" ||
-     resource.label == Label::"HighlyConfidential") &&
+    (context.trajectory.label == Jans::Label::"Confidential" ||
+     context.trajectory.label == Jans::Label::"HighlyConfidential") &&
     context.signature.categories.contains("secrets_detection")
 };
 
 @id("ifc-forbid-shell-output-raises-to-highly-confidential")
-@description("IFC: block shell command output classified as highly confidential — prevents taint escalation via command results.")
+@description("IFC: block shell output classified as highly confidential when trajectory is not already at that level — prevents taint escalation.")
 forbid (
     principal,
-    action == Action::"ShellCommandOutput",
+    action == Jans::Action::"observe_exec_output",
     resource
 ) when {
-    context.label == Label::"HighlyConfidential" &&
-    resource.label != Label::"HighlyConfidential"
+    context.label == Jans::Label::"HighlyConfidential" &&
+    context.trajectory.label != Jans::Label::"HighlyConfidential"
 };
 
 // ═══════════════════════════════════════════════════════
 // §5  Trajectory Step Limits – Sensitivity-Scaled
 // ═══════════════════════════════════════════════════════
 //
-// Limit how many outbound actions a sensitive trajectory
-// can take. More sensitive data = tighter step budget.
-// This bounds the blast radius even if individual actions
-// are permitted.
+// context.trajectory.step_count replaces resource.step_count
+// because the resource is now Jans::Shell / Jans::API.
 
 @id("ifc-forbid-confidential-trajectory-runaway")
-@description("IFC: limit confidential trajectories to 100 outbound steps — bounds blast radius of data exposure.")
+@description("IFC: limit confidential trajectories to 100 outbound steps — bounds blast radius.")
 forbid (
     principal,
-    action in [Action::"ShellCommand", Action::"WebFetch"],
+    action in [Jans::Action::"exec_command", Jans::Action::"call_api"],
     resource
 ) when {
-    resource.label == Label::"Confidential" &&
-    resource.step_count > 100
+    context.trajectory.label == Jans::Label::"Confidential" &&
+    context.trajectory.step_count > 100
 };
 
 @id("ifc-forbid-highly-confidential-trajectory-strict-limit")
 @description("IFC: limit highly confidential trajectories to 25 outbound steps — strict bound on highest-sensitivity processing.")
 forbid (
     principal,
-    action in [Action::"ShellCommand", Action::"WebFetch"],
+    action in [Jans::Action::"exec_command", Jans::Action::"call_api"],
     resource
 ) when {
-    resource.label == Label::"HighlyConfidential" &&
-    resource.step_count > 25
+    context.trajectory.label == Jans::Label::"HighlyConfidential" &&
+    context.trajectory.step_count > 25
 };
 
 // ═══════════════════════════════════════════════════════
 // §6  Cross-Channel Compound Guards
 // ═══════════════════════════════════════════════════════
-//
-// Policies that combine sensitivity labels with multiple
-// threat indicators to catch sophisticated exfiltration
-// that might evade single-signal detection.
 
 @id("ifc-forbid-sensitive-trajectory-with-obfuscation")
-@description("IFC: block any outbound action on sensitive trajectories when obfuscation detected — obfuscation + sensitive data is a strong exfiltration signal.")
+@description("IFC: block outbound actions on sensitive trajectories when obfuscation detected.")
 forbid (
     principal,
-    action in [Action::"ShellCommand", Action::"WebFetch"],
+    action in [Jans::Action::"exec_command", Jans::Action::"call_api"],
     resource
 ) when {
-    (resource.label == Label::"Confidential" ||
-     resource.label == Label::"HighlyConfidential") &&
+    (context.trajectory.label == Jans::Label::"Confidential" ||
+     context.trajectory.label == Jans::Label::"HighlyConfidential") &&
     context.signature.categories.contains("obfuscation")
 };
 
 @id("ifc-forbid-sensitive-trajectory-defense-evasion")
-@description("IFC: block outbound actions on sensitive trajectories using defense evasion techniques — encoding, steganography, or homoglyphs in outbound content.")
+@description("IFC: block outbound actions on sensitive trajectories using defense evasion techniques.")
 forbid (
     principal,
-    action in [Action::"ShellCommand", Action::"WebFetch"],
+    action in [Jans::Action::"exec_command", Jans::Action::"call_api"],
     resource
 ) when {
-    (resource.label == Label::"Confidential" ||
-     resource.label == Label::"HighlyConfidential") &&
+    (context.trajectory.label == Jans::Label::"Confidential" ||
+     context.trajectory.label == Jans::Label::"HighlyConfidential") &&
     context.signature.categories.contains("defense_evasion")
 };
 
 @id("ifc-forbid-tool-output-on-highly-confidential-trajectory")
-@description("IFC: block generic tool output processing on highly confidential trajectories when threats detected — prevents data ingestion from untrusted tool results.")
+@description("IFC: block tool output processing on highly confidential trajectories when threats detected.")
 forbid (
     principal,
-    action == Action::"ToolOutput",
+    action == Jans::Action::"observe_tool_output",
     resource
 ) when {
-    resource.label == Label::"HighlyConfidential" &&
+    context.trajectory.label == Jans::Label::"HighlyConfidential" &&
     context.signature.matches > 0
 };

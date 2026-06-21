@@ -7,70 +7,55 @@
 // Strategy: default-permit with targeted forbid overrides.
 // Cedar evaluates all policies; a single matching forbid wins.
 //
+// Namespace: Jans:: (aligned with jans-cedarling / carapace)
+//
 // ─── Actions & Context ────────────────────────────────
 //
-// Each action is evaluated with a context populated by the
-// harness (see cedar/transform.rs). Available actions and
-// their context fields:
-//
-//   Action::"Prompt"
-//     resource  = Message (in Trajectory)
+//   Jans::Action::"observe_prompt"
+//     principal = Jans::Workload | Jans::User
+//     resource  = Jans::Message (in Jans::Trajectory)
 //     context   = { workspace, signature, label }
-//     Fires on user/system prompt submission. Content is
-//     scanned for YARA signatures and classified for
-//     data sensitivity. The trajectory's label is raised
-//     to the max sensitivity seen so far.
 //
-//   Action::"ShellCommand"
-//     resource  = Trajectory
+//   Jans::Action::"exec_command"
+//     principal = Jans::Workload | Jans::User
+//     resource  = Jans::Shell   (e.g. Shell::"git")
 //     context   = { workspace, signature, policy, label,
-//                   command, working_dir }
-//     Fires before shell command execution. The command
-//     string is scanned for signatures, classified for
-//     sensitivity, and evaluated against the policy model.
+//                   command, working_dir, trajectory }
 //
-//   Action::"ShellCommandOutput"
-//     resource  = Trajectory
+//   Jans::Action::"observe_exec_output"
+//     resource  = Jans::Shell
 //     context   = { workspace, signature, policy, label,
 //                   command, exit_code, stdout, stderr,
-//                   working_dir }
-//     Fires after shell command execution. Combined
-//     stdout+stderr is scanned, classified, and evaluated.
-//     The trajectory label is raised if output contains
-//     higher-sensitivity data.
+//                   working_dir, trajectory }
 //
-//   Action::"WebFetch"
-//     resource  = Trajectory
+//   Jans::Action::"call_api"
+//     resource  = Jans::API    (e.g. API::"api.github.com")
 //     context   = { workspace, signature, policy, label,
-//                   url, prompt }
-//     Fires before a web fetch operation. The URL and
-//     prompt are scanned for signatures, classified for
-//     sensitivity, and evaluated against the policy model.
+//                   url, prompt, trajectory }
 //
-//   Action::"WebFetchOutput"
-//     resource  = Trajectory
+//   Jans::Action::"observe_api_output"
+//     resource  = Jans::API
 //     context   = { workspace, signature, policy, label,
-//                   url, code, result }
-//     Fires after a web fetch completes. The result
-//     content is scanned, classified, and evaluated.
-//     The trajectory label is raised if the fetched
-//     content contains higher-sensitivity data.
+//                   url, code, result, trajectory }
 //
-//   Action::"FileRead" / "FileWrite" / "FileEdit" / "FileDelete"
-//     resource  = File
-//     context   = { workspace, signature, policy, label,
-//                   path, operation }
-//     Fires before a file operation. The path and content
-//     are scanned, classified, and evaluated. A forbid
-//     here prevents the operation.
+//   Jans::Action::"call_tool"
+//     resource  = Jans::Tool   (e.g. Tool::"read_file")
+//     context   = { workspace, trajectory }
 //
-//   Action::"FileOperationResult"
-//     resource  = Trajectory
+//   Jans::Action::"observe_tool_output"
+//     resource  = Jans::Tool
 //     context   = { workspace, signature, policy, label,
-//                   path, content }
-//     Fires after a file operation completes. Content is
-//     scanned and classified. The trajectory label is
-//     raised if the file contains higher-sensitivity data.
+//                   content, trajectory }
+//
+//   Jans::Action::"read_file" / "write_file" / "edit_file" / "delete_file"
+//     resource  = Jans::File
+//     context   = { workspace, signature, policy, label,
+//                   path, operation, trajectory }
+//
+//   Jans::Action::"observe_file_result"
+//     resource  = Jans::File
+//     context   = { workspace, signature, policy, label,
+//                   path, content, trajectory }
 //
 // ─── Shared Context Types ─────────────────────────────
 //
@@ -79,7 +64,9 @@
 //                  severity: Long }
 //                  Severity: 0=None 1=Low 2=Medium 3=High 4=Critical
 //   policy     = { compliant: Bool, violations: Set<String> }
-//   label      = Label entity (e.g. Label::"HighlyConfidential")
+//   label      = Jans::Label entity (e.g. Jans::Label::"HighlyConfidential")
+//   trajectory = { label: Jans::Label, step_count: Long,
+//                  taints: Set<Jans::Taint> }
 
 // ─── Baseline ───────────────────────────────────────
 
@@ -90,15 +77,12 @@ permit (principal, action, resource);
 // ═══════════════════════════════════════════════════════
 // §1  Prompt – Signature-Based Threat Detection
 // ═══════════════════════════════════════════════════════
-//
-// Guard the Prompt action by blocking user or system
-// prompts whose content triggers YARA signature rules.
 
 @id("forbid-critical-severity")
 @description("Block any prompt where YARA signatures flagged critical severity (4).")
 forbid (
     principal,
-    action == Action::"Prompt",
+    action == Jans::Action::"observe_prompt",
     resource
 ) when {
     context.signature.severity >= 4
@@ -108,7 +92,7 @@ forbid (
 @description("Block prompts containing prompt injection patterns (role manipulation, system override, ignore instructions).")
 forbid (
     principal,
-    action == Action::"Prompt",
+    action == Jans::Action::"observe_prompt",
     resource
 ) when {
     context.signature.categories.contains("prompt_injection")
@@ -118,7 +102,7 @@ forbid (
 @description("Block prompts containing indirect injection via embedded document instructions.")
 forbid (
     principal,
-    action == Action::"Prompt",
+    action == Jans::Action::"observe_prompt",
     resource
 ) when {
     context.signature.categories.contains("indirect_injection")
@@ -128,7 +112,7 @@ forbid (
 @description("Block prompts that attempt to access or extract credentials.")
 forbid (
     principal,
-    action == Action::"Prompt",
+    action == Jans::Action::"observe_prompt",
     resource
 ) when {
     context.signature.categories.contains("credential_access")
@@ -138,7 +122,7 @@ forbid (
 @description("Block prompts with data exfiltration patterns.")
 forbid (
     principal,
-    action == Action::"Prompt",
+    action == Jans::Action::"observe_prompt",
     resource
 ) when {
     context.signature.categories.contains("exfiltration")
@@ -148,7 +132,7 @@ forbid (
 @description("Block prompts containing command injection patterns.")
 forbid (
     principal,
-    action == Action::"Prompt",
+    action == Jans::Action::"observe_prompt",
     resource
 ) when {
     context.signature.categories.contains("command_injection")
@@ -158,7 +142,7 @@ forbid (
 @description("Block prompts using obfuscation to evade detection (base64, HTML entities, homoglyphs).")
 forbid (
     principal,
-    action == Action::"Prompt",
+    action == Jans::Action::"observe_prompt",
     resource
 ) when {
     context.signature.categories.contains("defense_evasion")
@@ -168,7 +152,7 @@ forbid (
 @description("Block prompts attempting to abuse agent tools via injection.")
 forbid (
     principal,
-    action == Action::"Prompt",
+    action == Jans::Action::"observe_prompt",
     resource
 ) when {
     context.signature.categories.contains("tool_abuse")
@@ -177,19 +161,15 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §2  Prompt – Sensitivity-Gated Controls
 // ═══════════════════════════════════════════════════════
-//
-// Combine the data sensitivity label (IFC classifier)
-// with signature detection to enforce stricter controls
-// on sensitive data.
 
 @id("forbid-highly-confidential-with-threats")
 @description("Block prompts on highly confidential data when any YARA signature matched.")
 forbid (
     principal,
-    action == Action::"Prompt",
+    action == Jans::Action::"observe_prompt",
     resource
 ) when {
-    context.label == Label::"HighlyConfidential" &&
+    context.label == Jans::Label::"HighlyConfidential" &&
     context.signature.matches > 0
 };
 
@@ -197,26 +177,22 @@ forbid (
 @description("Block prompts on confidential data when YARA severity is high or above.")
 forbid (
     principal,
-    action == Action::"Prompt",
+    action == Jans::Action::"observe_prompt",
     resource
 ) when {
-    context.label == Label::"Confidential" &&
+    context.label == Jans::Label::"Confidential" &&
     context.signature.severity >= 3
 };
 
 // ═══════════════════════════════════════════════════════
 // §3  Shell Command – Pre-Execution Gates
 // ═══════════════════════════════════════════════════════
-//
-// Block dangerous commands before they execute. The
-// policy model and YARA signatures evaluate the command
-// string. A forbid here prevents execution entirely.
 
 @id("forbid-shell-policy-violation")
 @description("Block shell commands that violate the policy model (destructive, unsafe, etc.).")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     !context.policy.compliant
@@ -226,7 +202,7 @@ forbid (
 @description("Block shell commands containing injection patterns (chaining, reverse shells, cron manipulation).")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.signature.categories.contains("command_injection")
@@ -236,7 +212,7 @@ forbid (
 @description("Block shell commands using obfuscation to hide intent (base64, hex, concatenation).")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.signature.categories.contains("obfuscation")
@@ -246,7 +222,7 @@ forbid (
 @description("Block shell commands with data exfiltration patterns (curl to paste sites, DNS tunneling).")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.signature.categories.contains("exfiltration")
@@ -256,7 +232,7 @@ forbid (
 @description("Block shell commands accessing sensitive credential files or cloud configs.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.signature.categories.contains("credential_access")
@@ -266,7 +242,7 @@ forbid (
 @description("Block shell commands that trigger critical-severity YARA rules.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.signature.severity >= 4
@@ -278,26 +254,22 @@ forbid (
 @description("Block shell commands when trajectory carries highly confidential data — prevents exfiltration via shell.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
-    context.label == Label::"HighlyConfidential" &&
+    context.label == Jans::Label::"HighlyConfidential" &&
     context.signature.categories.contains("exfiltration")
 };
 
 // ═══════════════════════════════════════════════════════
 // §4  Shell Command Output – Post-Execution Guards
 // ═══════════════════════════════════════════════════════
-//
-// Detect threats in command output. A forbid here signals
-// the harness to halt the trajectory when output reveals
-// secrets, credentials, or exfiltration artifacts.
 
 @id("forbid-shell-output-secrets")
 @description("Block when command output contains detected secrets (API keys, tokens, private keys).")
 forbid (
     principal,
-    action == Action::"ShellCommandOutput",
+    action == Jans::Action::"observe_exec_output",
     resource
 ) when {
     context.signature.categories.contains("secrets_detection")
@@ -307,7 +279,7 @@ forbid (
 @description("Block when command output exposes credentials (memory dumps, cloud creds).")
 forbid (
     principal,
-    action == Action::"ShellCommandOutput",
+    action == Jans::Action::"observe_exec_output",
     resource
 ) when {
     context.signature.categories.contains("credential_access")
@@ -317,7 +289,7 @@ forbid (
 @description("Block when command output violates the policy model.")
 forbid (
     principal,
-    action == Action::"ShellCommandOutput",
+    action == Jans::Action::"observe_exec_output",
     resource
 ) when {
     !context.policy.compliant
@@ -327,25 +299,21 @@ forbid (
 @description("Block when command output shows evidence of data exfiltration (network sends, paste site responses).")
 forbid (
     principal,
-    action == Action::"ShellCommandOutput",
+    action == Jans::Action::"observe_exec_output",
     resource
 ) when {
     context.signature.categories.contains("exfiltration")
 };
 
 // ═══════════════════════════════════════════════════════
-// §5  Web Fetch – Pre-Execution Gates
+// §5  Web / API Fetch – Pre-Execution Gates
 // ═══════════════════════════════════════════════════════
-//
-// Block web requests before they fire. Guards against
-// exfiltration via HTTP, fetching from malicious domains,
-// and data leakage of sensitive content.
 
 @id("forbid-webfetch-policy-violation")
 @description("Block web fetches that violate the policy model.")
 forbid (
     principal,
-    action == Action::"WebFetch",
+    action == Jans::Action::"call_api",
     resource
 ) when {
     !context.policy.compliant
@@ -355,7 +323,7 @@ forbid (
 @description("Block web fetches to exfiltration targets (paste sites, suspicious external domains).")
 forbid (
     principal,
-    action == Action::"WebFetch",
+    action == Jans::Action::"call_api",
     resource
 ) when {
     context.signature.categories.contains("exfiltration")
@@ -365,7 +333,7 @@ forbid (
 @description("Block web fetches using obfuscated URLs or prompts to evade detection.")
 forbid (
     principal,
-    action == Action::"WebFetch",
+    action == Jans::Action::"call_api",
     resource
 ) when {
     context.signature.categories.contains("obfuscation")
@@ -375,7 +343,7 @@ forbid (
 @description("Block web fetches that trigger critical-severity YARA rules.")
 forbid (
     principal,
-    action == Action::"WebFetch",
+    action == Jans::Action::"call_api",
     resource
 ) when {
     context.signature.severity >= 4
@@ -387,25 +355,22 @@ forbid (
 @description("Block all web fetches when trajectory is tainted with highly confidential data — prevents HTTP exfiltration.")
 forbid (
     principal,
-    action == Action::"WebFetch",
+    action == Jans::Action::"call_api",
     resource
 ) when {
-    resource.label == Label::"HighlyConfidential" &&
+    context.trajectory.label == Jans::Label::"HighlyConfidential" &&
     context.signature.matches > 0
 };
 
 // ═══════════════════════════════════════════════════════
-// §6  Web Fetch Output – Post-Execution Guards
+// §6  Web / API Fetch Output – Post-Execution Guards
 // ═══════════════════════════════════════════════════════
-//
-// Detect threats in fetched web content before the agent
-// processes it further.
 
 @id("forbid-webfetch-output-injection")
-@description("Block web fetch results containing prompt injection patterns — prevents indirect injection via web content.")
+@description("Block web fetch results containing prompt injection — prevents indirect injection via web content.")
 forbid (
     principal,
-    action == Action::"WebFetchOutput",
+    action == Jans::Action::"observe_api_output",
     resource
 ) when {
     context.signature.categories.contains("prompt_injection") ||
@@ -416,7 +381,7 @@ forbid (
 @description("Block web fetch results that contain detected secrets.")
 forbid (
     principal,
-    action == Action::"WebFetchOutput",
+    action == Jans::Action::"observe_api_output",
     resource
 ) when {
     context.signature.categories.contains("secrets_detection")
@@ -426,7 +391,7 @@ forbid (
 @description("Block web fetch results with critical-severity YARA matches.")
 forbid (
     principal,
-    action == Action::"WebFetchOutput",
+    action == Jans::Action::"observe_api_output",
     resource
 ) when {
     context.signature.severity >= 4
@@ -435,15 +400,13 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §7  File Operations – Pre-Execution Gates
 // ═══════════════════════════════════════════════════════
-//
-// Guard file read/write/edit/delete before execution.
-// Resource is the File entity with its sensitivity label.
 
 @id("forbid-file-policy-violation")
 @description("Block file operations that violate the policy model.")
 forbid (
     principal,
-    action in [Action::"FileRead", Action::"FileWrite", Action::"FileEdit", Action::"FileDelete"],
+    action in [Jans::Action::"read_file",  Jans::Action::"write_file",
+               Jans::Action::"edit_file",  Jans::Action::"delete_file"],
     resource
 ) when {
     !context.policy.compliant
@@ -453,7 +416,8 @@ forbid (
 @description("Block file operations on sensitive credential and config files (.env, private keys, cloud creds).")
 forbid (
     principal,
-    action in [Action::"FileRead", Action::"FileWrite", Action::"FileEdit", Action::"FileDelete"],
+    action in [Jans::Action::"read_file",  Jans::Action::"write_file",
+               Jans::Action::"edit_file",  Jans::Action::"delete_file"],
     resource
 ) when {
     context.signature.categories.contains("credential_access")
@@ -463,7 +427,7 @@ forbid (
 @description("Block file writes or edits that would embed secrets into source code.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.signature.categories.contains("secrets_detection")
@@ -473,7 +437,8 @@ forbid (
 @description("Block file operations with path traversal patterns in the file path.")
 forbid (
     principal,
-    action in [Action::"FileRead", Action::"FileWrite", Action::"FileEdit", Action::"FileDelete"],
+    action in [Jans::Action::"read_file",  Jans::Action::"write_file",
+               Jans::Action::"edit_file",  Jans::Action::"delete_file"],
     resource
 ) when {
     context.signature.categories.contains("command_injection")
@@ -483,17 +448,18 @@ forbid (
 @description("Block deletion of files classified as highly confidential — prevents evidence destruction.")
 forbid (
     principal,
-    action == Action::"FileDelete",
+    action == Jans::Action::"delete_file",
     resource
 ) when {
-    resource.label == Label::"HighlyConfidential"
+    resource.label == Jans::Label::"HighlyConfidential"
 };
 
 @id("forbid-file-critical-severity")
 @description("Block file operations that trigger critical-severity YARA rules.")
 forbid (
     principal,
-    action in [Action::"FileRead", Action::"FileWrite", Action::"FileEdit", Action::"FileDelete"],
+    action in [Jans::Action::"read_file",  Jans::Action::"write_file",
+               Jans::Action::"edit_file",  Jans::Action::"delete_file"],
     resource
 ) when {
     context.signature.severity >= 4
@@ -502,15 +468,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §8  File Operation Result – Post-Execution Guards
 // ═══════════════════════════════════════════════════════
-//
-// Detect threats in file content after reads complete
-// and before the agent acts on the data.
 
 @id("forbid-file-result-secrets")
 @description("Block when file content reveals secrets — prevents the agent from using exposed credentials.")
 forbid (
     principal,
-    action == Action::"FileOperationResult",
+    action == Jans::Action::"observe_file_result",
     resource
 ) when {
     context.signature.categories.contains("secrets_detection") &&
@@ -521,7 +484,7 @@ forbid (
 @description("Block when file content contains prompt injection — prevents indirect injection via file reads.")
 forbid (
     principal,
-    action == Action::"FileOperationResult",
+    action == Jans::Action::"observe_file_result",
     resource
 ) when {
     context.signature.categories.contains("prompt_injection") ||
@@ -532,7 +495,7 @@ forbid (
 @description("Block when file operation results violate the policy model.")
 forbid (
     principal,
-    action == Action::"FileOperationResult",
+    action == Jans::Action::"observe_file_result",
     resource
 ) when {
     !context.policy.compliant
@@ -542,29 +505,29 @@ forbid (
 // §9  Trajectory-Level Controls – Runaway Agent Protection
 // ═══════════════════════════════════════════════════════
 //
-// Guard against runaway agents by limiting trajectory
-// step counts when the trajectory is tainted with
-// sensitive data. These apply to any action targeting
-// a Trajectory resource.
+// Trajectory state lives in context.trajectory (not resource)
+// because Shell/API/Tool are now the resource types.
 
 @id("forbid-tainted-trajectory-runaway")
 @description("Limit highly confidential trajectories to 50 steps — prevents unbounded processing of sensitive data.")
 forbid (
     principal,
-    action in [Action::"ShellCommand", Action::"WebFetch"],
+    action in [Jans::Action::"exec_command", Jans::Action::"call_api"],
     resource
 ) when {
-    resource.label == Label::"HighlyConfidential" &&
-    resource.step_count > 50
+    context.trajectory.label == Jans::Label::"HighlyConfidential" &&
+    context.trajectory.step_count > 50
 };
 
 @id("forbid-tainted-trajectory-with-threats")
 @description("Block further actions on tainted trajectories when signatures detect active threats.")
 forbid (
     principal,
-    action in [Action::"ShellCommand", Action::"ShellCommandOutput", Action::"WebFetch", Action::"WebFetchOutput", Action::"FileOperationResult"],
+    action in [Jans::Action::"exec_command",        Jans::Action::"observe_exec_output",
+               Jans::Action::"call_api",             Jans::Action::"observe_api_output",
+               Jans::Action::"observe_file_result"],
     resource
 ) when {
-    resource.taints.contains(Taint::"exfiltration") &&
+    context.trajectory.taints.contains(Jans::Taint::"exfiltration") &&
     context.signature.matches > 0
 };

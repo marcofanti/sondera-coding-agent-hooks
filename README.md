@@ -43,8 +43,8 @@ ollama pull gpt-oss-safeguard
 
 ### 1. Start the harness server
 
-The harness server loads Cedar policies and listens on a Unix socket for
-hook connections.
+The harness server loads the selected policy engine and listens on a Unix
+socket for hook connections. Cedar is the default engine.
 
 ```bash
 cargo run --bin sondera-harness-server -- -v
@@ -62,9 +62,17 @@ Override with `--socket`:
 
 ```bash
 cargo run --bin sondera-harness-server -- \
+  --policy-engine cedar \
   --policy-path /path/to/policies \
   --socket /var/run/sondera/sondera-harness.sock \
   -v
+```
+
+For dry-runs or custom deployments that provide enforcement elsewhere, use the
+built-in allow-all implementation:
+
+```bash
+cargo run --bin sondera-harness-server -- --policy-engine allow-all -v
 ```
 
 See [Deployment](#deployment) for more details on socket ownership and permissions.
@@ -94,14 +102,22 @@ cargo run -p sondera-claude -- uninstall --user
 Hooks for Cursor (`sondera-cursor`), GitHub Copilot (`sondera-copilot`), and
 Gemini CLI (`sondera-gemini`) follow the same pattern.
 
-### 3. Policies
+### 3. Policy Engines
 
-Cedar policies and the schema live in `policies/`. The harness server loads all
-`.cedar` and `.cedarschema` files from this directory at startup.
+The harness supports three policy engine variants selectable with `--policy-engine`.
+
+#### `cedarling` — recommended production engine
+
+Uses the `Jans::` entity namespace aligned with [jans-cedarling / carapace](https://github.com/JanssenProject/jans/tree/main/jans-cedarling).
+Loads `policies/schema.json` (Cedar JSON schema) and all `*.cedar` files at startup.
+
+```bash
+cargo run --bin sondera-harness-server -- --policy-engine cedarling -v
+```
 
 ```
 policies/
-├── base.cedarschema       # Entity types (Agent, Trajectory, Tool, File, Label, Taint) and actions
+├── schema.json            # Cedar JSON schema — Jans:: entity types and actions
 ├── base.cedar             # Default-permit baseline with targeted forbids for prompt injection,
 │                          #   credential access, data exfiltration, shell/web/file pre- and
 │                          #   post-execution gates, and trajectory-level runaway protection
@@ -122,6 +138,35 @@ policies/
 Write your own `.cedar` files into this directory to add custom rules. The
 harness evaluates all policies on every hook event — a single matching `forbid`
 overrides any `permit`.
+
+#### `mandate` — two-layer authorization
+
+Wraps `cedarling` with a per-agent Ed25519-signed mandate JWT. The ceiling
+policies define the absolute maximum; each agent is further constrained by its
+mandate. Both layers must allow for a request to proceed.
+
+Requires an Ed25519 verifying key stored as 32 raw bytes:
+
+```bash
+cargo run --bin sondera-harness-server -- \
+  --policy-engine mandate \
+  --mandate-pub-key /etc/sondera/mandate.pub \
+  --policy-path policies \
+  -v
+```
+
+Agents include a `mandate_jwt` field in their hook payload. The harness verifies
+the JWT signature and evaluates the embedded Cedar policy as an additional
+constraint layer.
+
+#### `cedar` — legacy engine
+
+Uses the old flat namespace (`Agent`, `Trajectory`, `Tool`, `File`). Kept for
+backward compatibility. Loads `.cedarschema` and `.cedar` files from `policies/`.
+
+```bash
+cargo run --bin sondera-harness-server -- --policy-engine cedar -v
+```
 
 ### 4. Examples
 
@@ -146,10 +191,20 @@ which coordinates three guardrail subsystems:
 2. **Policy Model** (gpt-oss-safeguard-20b via Ollama) — classifies content against secure code generation categories.
 3. **Information Flow Control** (gpt-oss-safeguard-20b via Ollama) — assigns sensitivity labels for data classification.
 
-The **Cedar Policy Engine** loads policies and schema fragments authored by a
-policy agent via the MCP server, combines guardrail signals with entity state
-from the **Fjall key-value store**, and returns an adjudication
-(Allow / Deny / Escalate) back through the hook binary to the agent.
+The **Policy Engine** is pluggable. Three implementations ship out of the box:
+
+- **CedarlingPolicyEngine** (recommended) — Jans::-namespaced Cedar policies with
+  `schema.json`. Resources are the things acted on (`Jans::Shell`, `Jans::API`,
+  `Jans::File`, `Jans::Tool`, `Jans::Message`); trajectory state lives in Cedar
+  context, not on the resource entity.
+- **MandatePolicyEngine** — wraps Cedarling with a per-agent Ed25519-signed JWT
+  carrying a Cedar policy subset. Both the ceiling and the mandate must allow.
+- **CedarPolicyEngine** (legacy) — flat namespace (`Agent`, `Trajectory`, etc.)
+  for backward compatibility.
+
+All three combine guardrail signals with entity state from the **Fjall key-value
+store** and return an adjudication (Allow / Deny / Escalate) back through the
+hook binary to the agent.
 
 ### Event Model
 
@@ -183,7 +238,7 @@ identically across all four agents.
 
 | Crate                         | Purpose                                                              |
 |-------------------------------|----------------------------------------------------------------------|
-| `crates/harness`              | Cedar policy engine, entity store, trajectory storage, tarpc RPC     |
+| `crates/harness`              | Configurable policy engine harness, entity store, trajectory storage, tarpc RPC |
 | `crates/guardrails/signature` | YARA-X signature scanning (prompt injection, exfiltration, secrets)  |
 | `crates/guardrails/ifc`       | LLM-based data classification (Microsoft Purview sensitivity labels) |
 | `crates/guardrails/policy`    | LLM-based policy evaluation (secure code generation categories)      |

@@ -1,5 +1,7 @@
-use super::CedarPolicyHarness;
+use super::CedarPolicyEngine;
 use super::entity::{Trajectory, euid};
+use crate::policy_engine::{PolicyEngine, PolicyEvaluation};
+use crate::storage::entity::EntityStore;
 use crate::{
     Action, Adjudicated, Annotation, Decision, EntityBuilder, Event, Observation, TrajectoryEvent,
 };
@@ -77,13 +79,17 @@ fn parse_file_paths(command: &str) -> Vec<String> {
     paths
 }
 
-impl CedarPolicyHarness {
+impl CedarPolicyEngine {
     /// Build a Cedar authorization request from an Event.
-    pub(super) async fn build_request(&self, event: &Event) -> Result<Request> {
+    pub(super) async fn build_request(
+        &self,
+        event: &Event,
+        entity_store: &EntityStore,
+    ) -> Result<Request> {
         let workspace_ctx = workspace_context(event);
         let principal_id = euid("Agent", &event.actor.id)?;
         let trajectory_id = euid("Trajectory", &event.trajectory_id)?;
-        let trajectory_entity = match self.entity_store.get(&trajectory_id)? {
+        let trajectory_entity = match entity_store.get(&trajectory_id)? {
             Some(entity) => entity,
             None => {
                 debug!(
@@ -91,8 +97,7 @@ impl CedarPolicyHarness {
                     &event.trajectory_id
                 );
                 let trajectory = Trajectory::new(&event.trajectory_id);
-                self.entity_store
-                    .upsert(&trajectory.clone().into_entity()?)?;
+                entity_store.upsert(&trajectory.clone().into_entity()?)?;
                 trajectory.into_entity()?
             }
         };
@@ -100,8 +105,7 @@ impl CedarPolicyHarness {
 
         // Increment step count and persist for each adjudicated event.
         trajectory.step_count += 1;
-        self.entity_store
-            .upsert(&trajectory.clone().into_entity()?)?;
+        entity_store.upsert(&trajectory.clone().into_entity()?)?;
 
         let mut mark_trajectory_label = |label: Label| -> Result<()> {
             // Set the max sensitivity label on Trajectory.
@@ -111,8 +115,7 @@ impl CedarPolicyHarness {
                     "Marking trajectory: {:?} with label: {:?}",
                     &trajectory.trajectory_id, label
                 );
-                self.entity_store
-                    .upsert(&trajectory.clone().into_entity()?)?;
+                entity_store.upsert(&trajectory.clone().into_entity()?)?;
             }
             Ok(())
         };
@@ -136,7 +139,7 @@ impl CedarPolicyHarness {
                     .string("content", &prompt.content)
                     .string("role", &prompt.role.to_string().to_lowercase())
                     .build()?;
-                self.entity_store.upsert(&message)?;
+                entity_store.upsert(&message)?;
 
                 mark_trajectory_label(label)?;
 
@@ -277,7 +280,7 @@ impl CedarPolicyHarness {
                 let file_entity = EntityBuilder::new(file_id.clone())
                     .entity_ref("label", "Label", &label.to_string())?
                     .build()?;
-                self.entity_store.upsert(&file_entity)?;
+                entity_store.upsert(&file_entity)?;
 
                 // Taint trajectory with file label.
                 mark_trajectory_label(label)?;
@@ -404,7 +407,7 @@ impl CedarPolicyHarness {
                     let file_entity = EntityBuilder::new(euid("File", path)?)
                         .entity_ref("label", "Label", &label.to_string())?
                         .build()?;
-                    self.entity_store.upsert(&file_entity)?;
+                    entity_store.upsert(&file_entity)?;
                 }
 
                 let context_value = serde_json::json!({
@@ -528,5 +531,48 @@ impl CedarPolicyHarness {
             reason,
             annotations,
         }
+    }
+}
+
+impl PolicyEngine for CedarPolicyEngine {
+    fn name(&self) -> &'static str {
+        "cedar"
+    }
+
+    async fn evaluate(
+        &self,
+        event: &Event,
+        entity_store: &EntityStore,
+    ) -> Result<PolicyEvaluation> {
+        let request = self.build_request(event, entity_store).await?;
+        let response = self.is_authorized(&request, entity_store)?;
+        let adjudicated = self.response_to_adjudicated(&response);
+
+        let errors: Vec<String> = response
+            .diagnostics()
+            .errors()
+            .map(|e| e.to_string())
+            .collect();
+        let reason_policies: Vec<String> = response
+            .diagnostics()
+            .reason()
+            .map(|id| id.to_string())
+            .collect();
+        let raw = serde_json::json!({
+            "engine": self.name(),
+            "request": {
+                "principal": request.principal().map(|p| p.to_string()),
+                "action": request.action().map(|a| a.to_string()),
+                "resource": request.resource().map(|r| r.to_string()),
+                "context": request.context().and_then(|c| c.to_json_value().ok()),
+            },
+            "response": {
+                "decision": format!("{:?}", response.decision()),
+                "reason": reason_policies,
+                "errors": errors,
+            },
+        });
+
+        Ok(PolicyEvaluation::new(adjudicated, raw))
     }
 }

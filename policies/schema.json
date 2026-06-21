@@ -1,0 +1,309 @@
+{
+    "Jans": {
+        "commonTypes": {
+            "WorkspaceContext": {
+                "type": "Record",
+                "attributes": {
+                    "cwd":             { "required": false, "type": "String" },
+                    "permission_mode": { "required": false, "type": "String" },
+                    "transcript_path": { "required": false, "type": "String" }
+                }
+            },
+            "SignatureContext": {
+                "type": "Record",
+                "attributes": {
+                    "matches":    { "required": false, "type": "Long" },
+                    "categories": {
+                        "required": false,
+                        "type": "Set",
+                        "element": { "type": "String" }
+                    },
+                    "severity":   { "required": false, "type": "Long" }
+                }
+            },
+            "PolicyContext": {
+                "type": "Record",
+                "attributes": {
+                    "compliant":  { "required": false, "type": "Boolean" },
+                    "violations": {
+                        "required": false,
+                        "type": "Set",
+                        "element": { "type": "String" }
+                    }
+                }
+            },
+            "TrajectoryContext": {
+                "type": "Record",
+                "attributes": {
+                    "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                    "step_count": { "required": false, "type": "Long" },
+                    "taints": {
+                        "required": false,
+                        "type": "Set",
+                        "element": { "type": "Entity", "name": "Jans::Taint" }
+                    }
+                }
+            }
+        },
+        "entityTypes": {
+            "Workload": {
+                "shape": {
+                    "type": "Record",
+                    "attributes": {
+                        "provider_id": { "required": false, "type": "String" }
+                    }
+                }
+            },
+            "User": {},
+            "Label": {},
+            "Taint": {},
+            "Trajectory": {
+                "shape": {
+                    "type": "Record",
+                    "attributes": {
+                        "step_count": { "required": true,  "type": "Long" },
+                        "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                        "taints": {
+                            "required": false,
+                            "type": "Set",
+                            "element": { "type": "Entity", "name": "Jans::Taint" }
+                        }
+                    }
+                }
+            },
+            "Message": {
+                "memberOfTypes": ["Trajectory"],
+                "shape": {
+                    "type": "Record",
+                    "attributes": {
+                        "content": { "required": true, "type": "String" },
+                        "role":    { "required": true, "type": "String" }
+                    }
+                }
+            },
+            "File": {
+                "shape": {
+                    "type": "Record",
+                    "attributes": {
+                        "label": { "required": false, "type": "Entity", "name": "Jans::Label" }
+                    }
+                }
+            },
+            "Shell": {},
+            "API":   {},
+            "Tool":  {}
+        },
+        "actions": {
+            "observe_prompt": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["Message"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace": { "required": false, "type": "WorkspaceContext" },
+                            "signature": { "required": false, "type": "SignatureContext" },
+                            "label":     { "required": false, "type": "Entity", "name": "Jans::Label" }
+                        }
+                    }
+                }
+            },
+            "exec_command": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["Shell"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":   { "required": false, "type": "WorkspaceContext" },
+                            "signature":   { "required": false, "type": "SignatureContext" },
+                            "policy":      { "required": false, "type": "PolicyContext" },
+                            "label":       { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "command":     { "required": false, "type": "String" },
+                            "working_dir": { "required": false, "type": "String" },
+                            "trajectory":  { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "observe_exec_output": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["Shell"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":   { "required": false, "type": "WorkspaceContext" },
+                            "signature":   { "required": false, "type": "SignatureContext" },
+                            "policy":      { "required": false, "type": "PolicyContext" },
+                            "label":       { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "command":     { "required": false, "type": "String" },
+                            "exit_code":   { "required": false, "type": "Long" },
+                            "stdout":      { "required": false, "type": "String" },
+                            "stderr":      { "required": false, "type": "String" },
+                            "working_dir": { "required": false, "type": "String" },
+                            "trajectory":  { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "call_api": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "policy":     { "required": false, "type": "PolicyContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "prompt":     { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "observe_api_output": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["API"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "policy":     { "required": false, "type": "PolicyContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "url":        { "required": false, "type": "String" },
+                            "code":       { "required": false, "type": "Long" },
+                            "result":     { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "call_tool": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["Tool"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "observe_tool_output": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["Tool"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "policy":     { "required": false, "type": "PolicyContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "content":    { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "read_file": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["File"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "policy":     { "required": false, "type": "PolicyContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "path":       { "required": false, "type": "String" },
+                            "operation":  { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "write_file": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["File"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "policy":     { "required": false, "type": "PolicyContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "path":       { "required": false, "type": "String" },
+                            "operation":  { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "edit_file": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["File"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "policy":     { "required": false, "type": "PolicyContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "path":       { "required": false, "type": "String" },
+                            "operation":  { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "delete_file": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["File"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "policy":     { "required": false, "type": "PolicyContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "path":       { "required": false, "type": "String" },
+                            "operation":  { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            },
+            "observe_file_result": {
+                "appliesTo": {
+                    "principalTypes": ["Workload", "User"],
+                    "resourceTypes":  ["File"],
+                    "context": {
+                        "type": "Record",
+                        "attributes": {
+                            "workspace":  { "required": false, "type": "WorkspaceContext" },
+                            "signature":  { "required": false, "type": "SignatureContext" },
+                            "policy":     { "required": false, "type": "PolicyContext" },
+                            "label":      { "required": false, "type": "Entity", "name": "Jans::Label" },
+                            "path":       { "required": false, "type": "String" },
+                            "content":    { "required": false, "type": "String" },
+                            "trajectory": { "required": false, "type": "TrajectoryContext" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

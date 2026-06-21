@@ -7,115 +7,104 @@
 // generation policy categories (OWASP/CWE) to enforce
 // fine-grained governance on file operations.
 //
-// Builds on the base policies in base.cedar. These policies
-// target specific file types where particular threat classes
-// are most relevant — a SQL injection finding in a .sql file
-// is far more actionable than in a .md file.
+// Namespace: Jans:: (aligned with jans-cedarling / carapace)
 //
 // ─── Available Context ──────────────────────────────────
 //
-//   FileRead / FileWrite / FileEdit / FileDelete (pre-exec):
-//     resource  = File { label: Label }
+//   read_file / write_file / edit_file / delete_file (pre-exec):
+//     resource  = Jans::File { label: Jans::Label }
 //     context   = { workspace, signature, policy, label,
-//                   path: String, operation: String }
+//                   path, operation, trajectory }
 //
-//   FileOperationResult (post-exec):
-//     resource  = Trajectory { step_count, label, taints }
+//   observe_file_result (post-exec):
+//     resource  = Jans::File { label: Jans::Label }
 //     context   = { workspace, signature, policy, label,
-//                   path: String, content: String }
+//                   path, content, trajectory }
+//     trajectory = { label, step_count, taints }  ← use for taint checks
 //
-//   policy.violations contains Secure Code Generation (SC)
-//   category codes from OWASP/CWE evaluation:
+//   policy.violations contains Secure Code Generation (SC) codes:
 //     SC2 = Injection        (CWE-78/89/79, OWASP A03:2021)
-//     SC3 = Secrets Exposure (CWE-798/200, OWASP A02:2021)
-//     SC4 = Path Traversal   (CWE-22,      OWASP A01:2021)
-//     SC5 = Insecure Deser.  (CWE-502,     OWASP A08:2021)
-//     SC6 = Weak Crypto      (CWE-327/330, OWASP A02:2021)
-//     SC7 = Broken AuthZ     (CWE-284/862, OWASP A01:2021)
+//     SC3 = Secrets Exposure (CWE-798/200,  OWASP A02:2021)
+//     SC4 = Path Traversal   (CWE-22,       OWASP A01:2021)
+//     SC5 = Insecure Deser.  (CWE-502,      OWASP A08:2021)
+//     SC6 = Weak Crypto      (CWE-327/330,  OWASP A02:2021)
+//     SC7 = Broken AuthZ     (CWE-284/862,  OWASP A01:2021)
 
 // ═══════════════════════════════════════════════════════
 // §1  Information Flow Control – Label-Based Guards
 // ═══════════════════════════════════════════════════════
 //
-// Enforce the "no write down" rule from the Bell-LaPadula
-// model: content classified at a higher sensitivity level
-// must not flow to a file entity at a lower level. This
-// prevents data spillage — e.g. an agent that has seen
-// highly confidential data cannot write it into a public
-// or internal file.
+// Bell-LaPadula "no write down": content at a higher
+// sensitivity label must not flow into a file at a lower
+// label. resource.label is the File entity's label;
+// context.label is the sensitivity of the content being
+// written (from IFC classifier).
 
 @id("forbid-file-write-hc-to-public")
-@description("IFC: block writing highly confidential content to a file labeled Public — prevents data spillage.")
+@description("IFC: block writing highly confidential content to a Public-labeled file — prevents data spillage.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
-    context.label == Label::"HighlyConfidential" &&
-    resource.label == Label::"Public"
+    context.label == Jans::Label::"HighlyConfidential" &&
+    resource.label == Jans::Label::"Public"
 };
 
 @id("forbid-file-write-hc-to-internal")
-@description("IFC: block writing highly confidential content to a file labeled Internal — prevents data spillage.")
+@description("IFC: block writing highly confidential content to an Internal-labeled file — prevents data spillage.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
-    context.label == Label::"HighlyConfidential" &&
-    resource.label == Label::"Internal"
+    context.label == Jans::Label::"HighlyConfidential" &&
+    resource.label == Jans::Label::"Internal"
 };
 
 @id("forbid-file-write-confidential-to-public")
-@description("IFC: block writing confidential content to a file labeled Public — prevents data spillage.")
+@description("IFC: block writing confidential content to a Public-labeled file — prevents data spillage.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
-    context.label == Label::"Confidential" &&
-    resource.label == Label::"Public"
+    context.label == Jans::Label::"Confidential" &&
+    resource.label == Jans::Label::"Public"
 };
 
 // ─── IFC: taint-aware post-read guards ───
 //
-// After a file read completes, the trajectory inherits
-// the file's sensitivity label. These policies block
-// further processing when the trajectory is already
-// tainted with exfiltration indicators — reading more
-// sensitive files at that point would expand the blast
-// radius.
+// After a file read the trajectory inherits the file's label.
+// Block further processing when the trajectory is already
+// tainted — limits blast radius. Taint state is in
+// context.trajectory (resource is Jans::File, not Trajectory).
 
 @id("forbid-file-result-hc-on-exfil-tainted-trajectory")
-@description("IFC: block highly confidential file read results when trajectory is tainted with exfiltration — limits blast radius.")
+@description("IFC: block highly confidential file results when trajectory is tainted with exfiltration — limits blast radius.")
 forbid (
     principal,
-    action == Action::"FileOperationResult",
+    action == Jans::Action::"observe_file_result",
     resource
 ) when {
-    context.label == Label::"HighlyConfidential" &&
-    resource.taints.contains(Taint::"exfiltration")
+    context.label == Jans::Label::"HighlyConfidential" &&
+    context.trajectory.taints.contains(Jans::Taint::"exfiltration")
 };
 
 @id("forbid-file-result-confidential-on-exfil-tainted-trajectory")
-@description("IFC: block confidential file read results when trajectory is tainted with exfiltration.")
+@description("IFC: block confidential file results when trajectory is tainted with exfiltration.")
 forbid (
     principal,
-    action == Action::"FileOperationResult",
+    action == Jans::Action::"observe_file_result",
     resource
 ) when {
-    context.label == Label::"Confidential" &&
-    resource.taints.contains(Taint::"exfiltration")
+    context.label == Jans::Label::"Confidential" &&
+    context.trajectory.taints.contains(Jans::Taint::"exfiltration")
 };
 
 // ═══════════════════════════════════════════════════════
 // §2  Credential & Secret File Guards
 // ═══════════════════════════════════════════════════════
-//
-// Targeted protection for file types that inherently
-// carry secrets or credentials. YARA signatures provide
-// the detection; these policies scope enforcement to the
-// file extensions where the risk is highest.
 
 // ─── Private keys & keystores ───
 
@@ -123,7 +112,7 @@ forbid (
 @description("Block reading private key files — agent should never access raw key material.")
 forbid (
     principal,
-    action == Action::"FileRead",
+    action == Jans::Action::"read_file",
     resource
 ) when {
     context.path like "*.pem" ||
@@ -137,7 +126,21 @@ forbid (
 @description("Block writing private key files — agent should not generate or overwrite key material.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
+    resource
+) when {
+    context.path like "*.pem" ||
+    context.path like "*.key" ||
+    context.path like "*.p12" ||
+    context.path like "*.pfx" ||
+    context.path like "*.jks"
+};
+
+@id("forbid-private-key-delete")
+@description("Block deleting private key files — key material must not be destroyed by the agent.")
+forbid (
+    principal,
+    action == Jans::Action::"delete_file",
     resource
 ) when {
     context.path like "*.pem" ||
@@ -153,7 +156,7 @@ forbid (
 @description("Block writing secrets into .env files — detected by YARA secrets_detection rules.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.env" &&
@@ -164,7 +167,7 @@ forbid (
 @description("Block writing credentials into .env files — detected by YARA credential_access rules.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.env" &&
@@ -177,7 +180,7 @@ forbid (
 @description("Block writing secrets into Python source files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.py" &&
@@ -188,7 +191,7 @@ forbid (
 @description("Block writing secrets into JavaScript/TypeScript source files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.js" || context.path like "*.ts" ||
@@ -200,7 +203,7 @@ forbid (
 @description("Block writing secrets into Go source files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.go" &&
@@ -211,7 +214,7 @@ forbid (
 @description("Block writing secrets into Rust source files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.rs" &&
@@ -222,7 +225,7 @@ forbid (
 @description("Block writing secrets into Java source files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.java" &&
@@ -235,7 +238,7 @@ forbid (
 @description("Block writing secrets into YAML config files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.yaml" || context.path like "*.yml") &&
@@ -246,7 +249,7 @@ forbid (
 @description("Block writing secrets into JSON config files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.json" &&
@@ -257,7 +260,7 @@ forbid (
 @description("Block writing secrets into TOML config files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.toml" &&
@@ -267,16 +270,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §3  Obfuscation Detection – Script & Shell Files
 // ═══════════════════════════════════════════════════════
-//
-// Obfuscated content in executable files is a strong
-// indicator of malicious intent. Block writes to scripts
-// and shell files when obfuscation YARA rules fire.
 
 @id("forbid-script-write-obfuscation")
 @description("Block writing obfuscated content into shell scripts.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.sh" || context.path like "*.bash" ||
@@ -288,7 +287,7 @@ forbid (
 @description("Block writing obfuscated content into Python files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.py" &&
@@ -299,7 +298,7 @@ forbid (
 @description("Block writing obfuscated content into JavaScript/TypeScript files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.js" || context.path like "*.ts" ||
@@ -311,7 +310,7 @@ forbid (
 @description("Block writing obfuscated content into PHP files.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.php" &&
@@ -321,16 +320,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §4  SC2 – Injection (CWE-78/89/79, OWASP A03:2021)
 // ═══════════════════════════════════════════════════════
-//
-// Block generated code with injection vulnerabilities in
-// file types where those flaws are exploitable: SQL files,
-// server-side languages, and web templates.
 
 @id("forbid-injection-sql")
-@description("SC2: block writing SQL files with injection vulnerabilities (unsanitized query construction).")
+@description("SC2: block writing SQL files with injection vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.sql" &&
@@ -338,10 +333,10 @@ forbid (
 };
 
 @id("forbid-injection-python")
-@description("SC2: block writing Python files with injection vulnerabilities (shell/SQL/eval injection).")
+@description("SC2: block writing Python files with injection vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.py" &&
@@ -349,10 +344,10 @@ forbid (
 };
 
 @id("forbid-injection-javascript")
-@description("SC2: block writing JavaScript/TypeScript files with injection vulnerabilities (XSS, eval, template injection).")
+@description("SC2: block writing JavaScript/TypeScript files with injection vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.js" || context.path like "*.ts" ||
@@ -361,10 +356,10 @@ forbid (
 };
 
 @id("forbid-injection-php")
-@description("SC2: block writing PHP files with injection vulnerabilities (shell_exec, SQL concat, XSS).")
+@description("SC2: block writing PHP files with injection vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.php" &&
@@ -372,10 +367,10 @@ forbid (
 };
 
 @id("forbid-injection-go")
-@description("SC2: block writing Go files with injection vulnerabilities (os/exec, sql.Query with fmt.Sprintf).")
+@description("SC2: block writing Go files with injection vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.go" &&
@@ -383,10 +378,10 @@ forbid (
 };
 
 @id("forbid-injection-ruby")
-@description("SC2: block writing Ruby files with injection vulnerabilities (system, backticks, ERB injection).")
+@description("SC2: block writing Ruby files with injection vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.rb" &&
@@ -394,10 +389,10 @@ forbid (
 };
 
 @id("forbid-injection-rust")
-@description("SC2: block writing Rust files with injection vulnerabilities (Command::new with unsanitized input).")
+@description("SC2: block writing Rust files with injection vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.rs" &&
@@ -405,10 +400,10 @@ forbid (
 };
 
 @id("forbid-injection-java")
-@description("SC2: block writing Java files with injection vulnerabilities (ProcessBuilder, JDBC concat).")
+@description("SC2: block writing Java files with injection vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.java" &&
@@ -416,14 +411,14 @@ forbid (
 };
 
 @id("forbid-injection-html-templates")
-@description("SC2: block writing HTML template files with XSS vulnerabilities (unescaped interpolation).")
+@description("SC2: block writing HTML template files with XSS vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.html" || context.path like "*.svelte" ||
-     context.path like "*.vue" || context.path like "*.ejs" ||
+     context.path like "*.vue"  || context.path like "*.ejs" ||
      context.path like "*.hbs") &&
     context.policy.violations.contains("SC2")
 };
@@ -431,18 +426,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §5  SC3 – Secrets Exposure (CWE-798/200, OWASP A02:2021)
 // ═══════════════════════════════════════════════════════
-//
-// Block generated code that hardcodes secrets in config
-// and infrastructure files. Distinct from §2 signature-
-// based detection — these fire on the policy model's
-// semantic analysis of the code, catching patterns like
-// `password = "hunter2"` that signatures may miss.
 
 @id("forbid-secrets-exposure-env")
-@description("SC3: block writing .env files with hardcoded secrets (should use vault/secret manager references).")
+@description("SC3: block writing .env files with hardcoded secrets.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.env" &&
@@ -453,7 +442,7 @@ forbid (
 @description("SC3: block writing YAML config files with hardcoded secrets.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.yaml" || context.path like "*.yml") &&
@@ -464,11 +453,13 @@ forbid (
 @description("SC3: block writing Dockerfiles with hardcoded secrets (ARG/ENV with credentials).")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
-    (context.path like "*Dockerfile" || context.path like "*.dockerfile" ||
-     context.path like "*docker-compose*.yml" || context.path like "*docker-compose*.yaml") &&
+    (context.path like "*Dockerfile"           ||
+     context.path like "*.dockerfile"          ||
+     context.path like "*docker-compose*.yml"  ||
+     context.path like "*docker-compose*.yaml") &&
     context.policy.violations.contains("SC3")
 };
 
@@ -476,7 +467,7 @@ forbid (
 @description("SC3: block writing Terraform/IaC files with hardcoded secrets.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.tf" || context.path like "*.tfvars") &&
@@ -487,12 +478,12 @@ forbid (
 @description("SC3: block writing CI/CD config files with hardcoded secrets.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
-    (context.path like "*.github/workflows/*.yml" ||
+    (context.path like "*.github/workflows/*.yml"  ||
      context.path like "*.github/workflows/*.yaml" ||
-     context.path like "*.gitlab-ci.yml" ||
+     context.path like "*.gitlab-ci.yml"           ||
      context.path like "*Jenkinsfile") &&
     context.policy.violations.contains("SC3")
 };
@@ -500,17 +491,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §6  SC5 – Insecure Deserialization (CWE-502, OWASP A08)
 // ═══════════════════════════════════════════════════════
-//
-// Block generated code that uses unsafe deserialization
-// on untrusted input. Targets languages with known-dangerous
-// deserializers: Python (pickle, yaml.load), Ruby (Marshal),
-// Java (ObjectInputStream), PHP (unserialize).
 
 @id("forbid-insecure-deser-python")
-@description("SC5: block writing Python files with insecure deserialization (pickle.load, yaml.load without SafeLoader).")
+@description("SC5: block writing Python files with insecure deserialization (pickle.load, yaml.load).")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.py" &&
@@ -521,7 +507,7 @@ forbid (
 @description("SC5: block writing YAML files with unsafe loader directives.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.yaml" || context.path like "*.yml") &&
@@ -529,10 +515,10 @@ forbid (
 };
 
 @id("forbid-insecure-deser-ruby")
-@description("SC5: block writing Ruby files with insecure deserialization (Marshal.load, YAML.load on untrusted).")
+@description("SC5: block writing Ruby files with insecure deserialization (Marshal.load).")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.rb" &&
@@ -540,10 +526,10 @@ forbid (
 };
 
 @id("forbid-insecure-deser-java")
-@description("SC5: block writing Java files with insecure deserialization (ObjectInputStream on untrusted).")
+@description("SC5: block writing Java files with insecure deserialization (ObjectInputStream).")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.java" &&
@@ -554,7 +540,7 @@ forbid (
 @description("SC5: block writing PHP files with insecure deserialization (unserialize on user input).")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.php" &&
@@ -564,16 +550,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §7  SC6 – Weak Cryptography (CWE-327/330, OWASP A02)
 // ═══════════════════════════════════════════════════════
-//
-// Block generated code that uses broken or weak crypto:
-// MD5/SHA-1 for hashing, DES/RC4/ECB for encryption,
-// Math.random()/random.randint() for security tokens.
 
 @id("forbid-weak-crypto-python")
 @description("SC6: block writing Python files with weak cryptography (md5, sha1, random for tokens).")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.py" &&
@@ -581,10 +563,10 @@ forbid (
 };
 
 @id("forbid-weak-crypto-javascript")
-@description("SC6: block writing JavaScript/TypeScript files with weak cryptography (Math.random for tokens, createHash('md5')).")
+@description("SC6: block writing JavaScript/TypeScript files with weak cryptography.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.js" || context.path like "*.ts") &&
@@ -592,10 +574,10 @@ forbid (
 };
 
 @id("forbid-weak-crypto-go")
-@description("SC6: block writing Go files with weak cryptography (crypto/md5, crypto/des, math/rand for tokens).")
+@description("SC6: block writing Go files with weak cryptography (crypto/md5, math/rand for tokens).")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.go" &&
@@ -603,10 +585,10 @@ forbid (
 };
 
 @id("forbid-weak-crypto-rust")
-@description("SC6: block writing Rust files with weak cryptography (md5 crate for auth, rand::thread_rng for tokens).")
+@description("SC6: block writing Rust files with weak cryptography (md5 crate for auth).")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.rs" &&
@@ -617,7 +599,7 @@ forbid (
 @description("SC6: block writing Java files with weak cryptography (MessageDigest MD5/SHA1, DES, ECB mode).")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.java" &&
@@ -627,16 +609,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §8  SC7 – Broken Access Control (CWE-284/862, OWASP A01)
 // ═══════════════════════════════════════════════════════
-//
-// Block generated code with missing authentication or
-// authorization checks on endpoints that modify state.
-// Targets server-side languages and API framework files.
 
 @id("forbid-broken-authz-python")
-@description("SC7: block writing Python API files with broken access control (unprotected endpoints, missing auth decorators).")
+@description("SC7: block writing Python API files with broken access control.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.py" &&
@@ -644,10 +622,10 @@ forbid (
 };
 
 @id("forbid-broken-authz-javascript")
-@description("SC7: block writing JavaScript/TypeScript API files with broken access control (unprotected routes, missing middleware).")
+@description("SC7: block writing JavaScript/TypeScript API files with broken access control.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.js" || context.path like "*.ts") &&
@@ -655,10 +633,10 @@ forbid (
 };
 
 @id("forbid-broken-authz-go")
-@description("SC7: block writing Go API files with broken access control (handlers without auth middleware).")
+@description("SC7: block writing Go API files with broken access control.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.go" &&
@@ -666,10 +644,10 @@ forbid (
 };
 
 @id("forbid-broken-authz-java")
-@description("SC7: block writing Java API files with broken access control (missing @PreAuthorize, unprotected controllers).")
+@description("SC7: block writing Java API files with broken access control.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.java" &&
@@ -677,10 +655,10 @@ forbid (
 };
 
 @id("forbid-broken-authz-rust")
-@description("SC7: block writing Rust API files with broken access control (handlers without auth extractors).")
+@description("SC7: block writing Rust API files with broken access control.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.rs" &&
@@ -690,16 +668,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §9  SC4 – Path Traversal (CWE-22, OWASP A01:2021)
 // ═══════════════════════════════════════════════════════
-//
-// Block generated code that constructs file paths from
-// user input without canonicalization or base-directory
-// validation. Applies broadly to all server-side languages.
 
 @id("forbid-path-traversal-python")
-@description("SC4: block writing Python files with path traversal vulnerabilities (open() with user-controlled paths).")
+@description("SC4: block writing Python files with path traversal vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.py" &&
@@ -707,10 +681,10 @@ forbid (
 };
 
 @id("forbid-path-traversal-javascript")
-@description("SC4: block writing JavaScript/TypeScript files with path traversal vulnerabilities (fs.readFile with user paths).")
+@description("SC4: block writing JavaScript/TypeScript files with path traversal vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     (context.path like "*.js" || context.path like "*.ts") &&
@@ -718,10 +692,10 @@ forbid (
 };
 
 @id("forbid-path-traversal-go")
-@description("SC4: block writing Go files with path traversal vulnerabilities (os.Open with user paths).")
+@description("SC4: block writing Go files with path traversal vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.go" &&
@@ -729,10 +703,10 @@ forbid (
 };
 
 @id("forbid-path-traversal-java")
-@description("SC4: block writing Java files with path traversal vulnerabilities (new File with user paths).")
+@description("SC4: block writing Java files with path traversal vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.java" &&
@@ -740,10 +714,10 @@ forbid (
 };
 
 @id("forbid-path-traversal-rust")
-@description("SC4: block writing Rust files with path traversal vulnerabilities (std::fs with user paths).")
+@description("SC4: block writing Rust files with path traversal vulnerabilities.")
 forbid (
     principal,
-    action in [Action::"FileWrite", Action::"FileEdit"],
+    action in [Jans::Action::"write_file", Jans::Action::"edit_file"],
     resource
 ) when {
     context.path like "*.rs" &&
@@ -753,18 +727,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §10  Post-Read Guards – Indirect Injection via Files
 // ═══════════════════════════════════════════════════════
-//
-// When the agent reads a file, the content enters the
-// conversation context. Malicious content embedded in
-// data files or configs can act as indirect prompt
-// injection. These policies guard specific file types
-// that are commonly used as injection vectors.
 
 @id("forbid-file-result-injection-yaml")
 @description("Block YAML file content containing prompt injection — prevents indirect injection via config files.")
 forbid (
     principal,
-    action == Action::"FileOperationResult",
+    action == Jans::Action::"observe_file_result",
     resource
 ) when {
     (context.path like "*.yaml" || context.path like "*.yml") &&
@@ -776,7 +744,7 @@ forbid (
 @description("Block JSON file content containing prompt injection — prevents indirect injection via data files.")
 forbid (
     principal,
-    action == Action::"FileOperationResult",
+    action == Jans::Action::"observe_file_result",
     resource
 ) when {
     context.path like "*.json" &&
@@ -788,7 +756,7 @@ forbid (
 @description("Block Markdown file content containing prompt injection — prevents indirect injection via documentation.")
 forbid (
     principal,
-    action == Action::"FileOperationResult",
+    action == Jans::Action::"observe_file_result",
     resource
 ) when {
     (context.path like "*.md" || context.path like "*.mdx") &&
@@ -800,7 +768,7 @@ forbid (
 @description("Block CSV/TSV file content containing prompt injection — prevents indirect injection via data imports.")
 forbid (
     principal,
-    action == Action::"FileOperationResult",
+    action == Jans::Action::"observe_file_result",
     resource
 ) when {
     (context.path like "*.csv" || context.path like "*.tsv") &&

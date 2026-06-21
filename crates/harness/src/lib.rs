@@ -8,7 +8,9 @@
 //! # Architecture
 //!
 //! - [`Harness`] trait: the adjudication interface (implement for custom backends).
-//! - [`CedarPolicyHarness`]: production implementation backed by Cedar, YARA-X
+//! - [`PolicyEngine`]: pluggable authorization boundary for Cedar or custom
+//!   policy engines.
+//! - [`CedarPolicyHarness`]: default production harness backed by Cedar, YARA-X
 //!   signature scanning, Ollama-based data classification, and policy evaluation.
 //! - [`rpc`]: tarpc IPC layer — the harness server exposes adjudication over
 //!   Unix domain sockets so hook processes can call it without linking the
@@ -21,7 +23,11 @@
 //! MIT — see LICENSE in the repository root.
 
 mod cedar;
+pub mod cedarling;
 mod harness;
+pub mod mandate;
+mod policy_engine;
+mod policy_harness;
 pub mod rpc;
 pub mod storage;
 mod types;
@@ -30,9 +36,13 @@ mod types;
 pub use types::*;
 
 // Public exports for Harness API.
-pub use cedar::CedarPolicyHarness;
+pub use cedar::CedarPolicyEngine;
 pub use cedar::entity::{EntityBuilder, Trajectory, euid, json_to_restricted_expr};
+pub use cedarling::CedarlingPolicyEngine;
+pub use mandate::MandatePolicyEngine;
 pub use harness::Harness;
+pub use policy_engine::{AllowAllPolicyEngine, PolicyEngine, PolicyEvaluation, SyncAuthorize};
+pub use policy_harness::{CedarPolicyHarness, CedarlingPolicyHarness, MandatePolicyHarness, PolicyHarness};
 pub use rpc::HarnessClient;
 pub use sondera_information_flow_control::Label;
 

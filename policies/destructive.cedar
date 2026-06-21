@@ -6,10 +6,7 @@
 // and infrastructure actions that can cause irreversible damage.
 // Builds on the base policies in base.cedar.
 //
-// Strategy: targeted forbids for commands and patterns that
-// destroy data, force-overwrite state, or bypass safety
-// mechanisms. Each policy is scoped to the specific action
-// type and uses command/path pattern matching via `like`.
+// Namespace: Jans:: (aligned with jans-cedarling / carapace)
 //
 // ─── Coverage ───────────────────────────────────────────
 //
@@ -21,20 +18,18 @@
 //   §6  Recursive Permission & Ownership Changes
 //   §7  Disk & Partition Operations
 //   §8  Critical File Deletion Guards
+//   §9  Kill & Process Termination
+//   §10 Destructive + Sensitive Data Compound Guards
 
 // ═══════════════════════════════════════════════════════
 // §1  Filesystem Destruction
 // ═══════════════════════════════════════════════════════
-//
-// Block shell commands that recursively delete files,
-// overwrite data, or wipe filesystems. These are nearly
-// always irreversible and catastrophic in a dev environment.
 
 @id("forbid-rm-rf")
 @description("Block recursive force-delete commands (rm -rf) — prevents accidental or malicious filesystem wipe.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*rm -rf *" ||
@@ -46,7 +41,7 @@ forbid (
 @description("Block recursive delete without force flag — still destructive, requires review.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*rm -r /*" ||
@@ -57,7 +52,7 @@ forbid (
 @description("Block any rm targeting root or home directories — catastrophic data loss.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*rm * /*" ||
@@ -68,7 +63,7 @@ forbid (
 @description("Block shred commands — secure deletion makes recovery impossible.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*shred *"
@@ -78,7 +73,7 @@ forbid (
 @description("Block dd commands that write to block devices — can destroy entire disks.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*dd *of=/dev/*"
@@ -88,7 +83,7 @@ forbid (
 @description("Block filesystem creation commands — erases all data on the target device.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*mkfs*"
@@ -98,7 +93,7 @@ forbid (
 @description("Block redirecting important files to /dev/null — silently destroys data.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*> /dev/null 2>&1 <*" ||
@@ -108,16 +103,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §2  Git Destructive Operations
 // ═══════════════════════════════════════════════════════
-//
-// Block git commands that rewrite history, discard work,
-// or force-push to shared branches. These can cause
-// permanent loss of commits and break collaborators.
 
 @id("forbid-git-force-push")
 @description("Block git force push — rewrites remote history, can destroy collaborators' work.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*git push --force*" ||
@@ -130,7 +121,7 @@ forbid (
 @description("Block git reset --hard — discards all uncommitted changes irreversibly.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*git reset --hard*"
@@ -140,7 +131,7 @@ forbid (
 @description("Block git clean -f — permanently deletes untracked files.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*git clean -f*" ||
@@ -153,7 +144,7 @@ forbid (
 @description("Block git checkout . — discards all unstaged changes in working tree.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*git checkout -- .*" ||
@@ -164,7 +155,7 @@ forbid (
 @description("Block git restore . — discards all unstaged changes (modern equivalent of checkout .).")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*git restore .*" ||
@@ -175,7 +166,7 @@ forbid (
 @description("Block git branch -D — force-deletes branches without merge check, can lose unmerged work.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*git branch -D *"
@@ -185,7 +176,7 @@ forbid (
 @description("Block git operations with --no-verify — bypasses pre-commit hooks and safety checks.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*git commit --no-verify*" ||
@@ -197,7 +188,7 @@ forbid (
 @description("Block git filter-branch and filter-repo — rewrites entire repository history.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*git filter-branch*" ||
@@ -207,16 +198,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §3  Infrastructure Teardown
 // ═══════════════════════════════════════════════════════
-//
-// Block commands that destroy cloud infrastructure,
-// containers, and orchestrated services. These can
-// take down production systems.
 
 @id("forbid-terraform-destroy")
 @description("Block terraform destroy — tears down all managed infrastructure.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*terraform destroy*" ||
@@ -227,7 +214,7 @@ forbid (
 @description("Block terraform apply with auto-approve — bypasses human review of infrastructure changes.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*terraform apply -auto-approve*" ||
@@ -240,7 +227,7 @@ forbid (
 @description("Block docker system prune — removes all unused containers, images, networks, and volumes.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*docker system prune*"
@@ -250,7 +237,7 @@ forbid (
 @description("Block docker volume removal — destroys persistent data in named volumes.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*docker volume rm *" ||
@@ -261,7 +248,7 @@ forbid (
 @description("Block force removal of running containers — kills processes without graceful shutdown.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*docker rm -f *" ||
@@ -272,7 +259,7 @@ forbid (
 @description("Block kubectl delete namespace — destroys all resources in a Kubernetes namespace.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*kubectl delete namespace *" ||
@@ -283,7 +270,7 @@ forbid (
 @description("Block kubectl delete with --all flag — mass-deletes Kubernetes resources.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*kubectl delete * --all*"
@@ -293,7 +280,7 @@ forbid (
 @description("Block helm uninstall — removes deployed Kubernetes releases and their resources.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*helm uninstall *" ||
@@ -303,16 +290,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §4  Database Destruction
 // ═══════════════════════════════════════════════════════
-//
-// Block shell commands that execute destructive SQL or
-// database management operations. Covers direct CLI
-// invocations and piped SQL.
 
 @id("forbid-drop-database")
 @description("Block DROP DATABASE commands — permanently destroys entire databases.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*DROP DATABASE*" ||
@@ -324,7 +307,7 @@ forbid (
 @description("Block DROP TABLE commands — permanently destroys tables and their data.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*DROP TABLE*" ||
@@ -335,7 +318,7 @@ forbid (
 @description("Block TRUNCATE TABLE commands — irrecoverably deletes all rows from a table.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*TRUNCATE TABLE*" ||
@@ -347,7 +330,7 @@ forbid (
 @description("Block DELETE FROM without WHERE clause — deletes all rows in a table.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*DELETE FROM*" &&
@@ -358,7 +341,7 @@ forbid (
 @description("Block Redis FLUSHALL/FLUSHDB — destroys all data in Redis.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*FLUSHALL*" ||
@@ -371,7 +354,7 @@ forbid (
 @description("Block MongoDB dropDatabase — permanently destroys a MongoDB database.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*dropDatabase*" ||
@@ -381,16 +364,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §5  Package & Dependency Destruction
 // ═══════════════════════════════════════════════════════
-//
-// Guard lock files and dependency manifests from deletion
-// or overwrite. Losing lock files causes non-reproducible
-// builds and potential supply chain issues.
 
 @id("forbid-delete-lockfile")
 @description("Block deletion of package lock files — causes non-reproducible builds.")
 forbid (
     principal,
-    action == Action::"FileDelete",
+    action == Jans::Action::"delete_file",
     resource
 ) when {
     context.path like "*package-lock.json" ||
@@ -409,7 +388,7 @@ forbid (
 @description("Block shell commands that delete lock files — use package manager commands instead.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     (context.command like "*rm *package-lock*" ||
@@ -425,7 +404,7 @@ forbid (
 @description("Block rm -rf node_modules via shell — use package manager clean commands instead.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*rm -rf *node_modules*" ||
@@ -435,15 +414,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §6  Recursive Permission & Ownership Changes
 // ═══════════════════════════════════════════════════════
-//
-// Block broad recursive permission changes that can
-// break system security or make files world-readable.
 
 @id("forbid-chmod-recursive-permissive")
 @description("Block recursive chmod to overly permissive modes (777, 666) — breaks file security model.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*chmod -R 777 *" ||
@@ -455,7 +431,7 @@ forbid (
 @description("Block recursive chown to root — can lock out the current user from their own files.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*chown -R root *"
@@ -464,15 +440,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §7  Disk & Partition Operations
 // ═══════════════════════════════════════════════════════
-//
-// Block commands that modify disk partitions or create
-// filesystems. An agent should never touch block devices.
 
 @id("forbid-fdisk")
 @description("Block fdisk/parted — partition table modification can destroy all data on a disk.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*fdisk *" ||
@@ -484,7 +457,7 @@ forbid (
 @description("Block wipefs — erases filesystem signatures from block devices.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*wipefs *"
@@ -493,16 +466,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §8  Critical File Deletion Guards
 // ═══════════════════════════════════════════════════════
-//
-// Protect critical project and system files from deletion.
-// These files are difficult to reconstruct and their loss
-// can break builds, deployments, or the entire project.
 
 @id("forbid-delete-gitignore")
 @description("Block deletion of .gitignore — can cause secrets and build artifacts to be committed.")
 forbid (
     principal,
-    action == Action::"FileDelete",
+    action == Jans::Action::"delete_file",
     resource
 ) when {
     context.path like "*.gitignore"
@@ -512,7 +481,7 @@ forbid (
 @description("Block deletion of Dockerfiles — required for container builds and deployments.")
 forbid (
     principal,
-    action == Action::"FileDelete",
+    action == Jans::Action::"delete_file",
     resource
 ) when {
     context.path like "*Dockerfile" ||
@@ -524,7 +493,7 @@ forbid (
 @description("Block deletion of CI/CD configuration files — breaks automated build and deploy pipelines.")
 forbid (
     principal,
-    action == Action::"FileDelete",
+    action == Jans::Action::"delete_file",
     resource
 ) when {
     context.path like "*.github/workflows/*.yml" ||
@@ -538,7 +507,7 @@ forbid (
 @description("Block deletion of database migration files — can corrupt migration history and break deployments.")
 forbid (
     principal,
-    action == Action::"FileDelete",
+    action == Jans::Action::"delete_file",
     resource
 ) when {
     context.path like "*migrations/*.py" ||
@@ -552,7 +521,7 @@ forbid (
 @description("Block deletion of security configuration files — can disable authentication and authorization.")
 forbid (
     principal,
-    action == Action::"FileDelete",
+    action == Jans::Action::"delete_file",
     resource
 ) when {
     context.path like "*.eslintrc*" ||
@@ -565,15 +534,12 @@ forbid (
 // ═══════════════════════════════════════════════════════
 // §9  Kill & Process Termination
 // ═══════════════════════════════════════════════════════
-//
-// Block commands that mass-kill processes. An agent
-// should not terminate arbitrary processes.
 
 @id("forbid-killall")
 @description("Block killall and pkill — mass process termination can take down critical services.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*killall *" ||
@@ -584,7 +550,7 @@ forbid (
 @description("Block kill -9 — forcibly kills processes without cleanup, can cause data corruption.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     context.command like "*kill -9 *" ||
@@ -596,29 +562,28 @@ forbid (
 // §10  Destructive + Sensitive Data Compound Guards
 // ═══════════════════════════════════════════════════════
 //
-// Compound policies that combine destructive command
-// patterns with sensitivity labels. More restrictive
-// when the trajectory carries sensitive data.
+// Trajectory state lives in context.trajectory (not resource)
+// because Shell is now the resource type for exec_command.
 
 @id("forbid-any-destructive-on-confidential-trajectory")
 @description("Block non-compliant shell commands when trajectory carries confidential data — defense in depth against destructive actions on sensitive projects.")
 forbid (
     principal,
-    action == Action::"ShellCommand",
+    action == Jans::Action::"exec_command",
     resource
 ) when {
     !context.policy.compliant &&
-    (resource.label == Label::"Confidential" ||
-     resource.label == Label::"HighlyConfidential")
+    (context.trajectory.label == Jans::Label::"Confidential" ||
+     context.trajectory.label == Jans::Label::"HighlyConfidential")
 };
 
 @id("forbid-file-delete-on-confidential-trajectory")
 @description("Block all file deletions when trajectory carries confidential or higher data — prevents evidence destruction.")
 forbid (
     principal,
-    action == Action::"FileDelete",
+    action == Jans::Action::"delete_file",
     resource
 ) when {
-    context.label == Label::"Confidential" ||
-    context.label == Label::"HighlyConfidential"
+    context.label == Jans::Label::"Confidential" ||
+    context.label == Jans::Label::"HighlyConfidential"
 };
