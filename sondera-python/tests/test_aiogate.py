@@ -178,3 +178,84 @@ async def test_escalation_handle_helper_returns_none_without_id():
     gate = AsyncPolicyGate(admin_url=ADMIN_URL)
     d = PolicyDecision(decision="Escalate")  # escalation_id=None
     assert gate.escalation_handle(d) is None
+
+
+# ─── AsyncTrajectory.observe() ────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_async_trajectory_observe_shell_output():
+    """observe() sends a ShellCommandOutput event through adjudicate_raw."""
+    from sondera import Observation
+
+    gate = AsyncPolicyGate(admin_url=ADMIN_URL)
+    gate.adjudicate_raw = AsyncMock(return_value=make_decision("Allow"))
+
+    async with gate.trajectory(agent_id="hermes-1") as traj:
+        obs = Observation.shell_output(call_id="call-1", stdout="total 0\n", exit_code=0)
+        d = await traj.observe(obs)
+
+    assert d.allow
+    call_args = gate.adjudicate_raw.call_args[0][0]
+    event_body = call_args["event"]
+    assert "Observation" in event_body
+    assert "ShellCommandOutput" in event_body["Observation"]
+    assert event_body["Observation"]["ShellCommandOutput"]["stdout"] == "total 0\n"
+
+
+@pytest.mark.asyncio
+async def test_async_trajectory_observe_prompt():
+    """observe() with a Prompt observation sends the right event shape."""
+    from sondera import Observation
+
+    gate = AsyncPolicyGate(admin_url=ADMIN_URL)
+    gate.adjudicate_raw = AsyncMock(return_value=make_decision("Allow"))
+
+    async with gate.trajectory() as traj:
+        obs = Observation.prompt(content="summarise the file", role="user")
+        d = await traj.observe(obs)
+
+    assert d.allow
+    event_body = gate.adjudicate_raw.call_args[0][0]["event"]
+    assert "Observation" in event_body
+    assert "Prompt" in event_body["Observation"]
+    assert event_body["Observation"]["Prompt"]["content"] == "summarise the file"
+
+
+@pytest.mark.asyncio
+async def test_async_trajectory_observe_think():
+    """observe() with a Think observation sends the right event shape."""
+    from sondera import Observation
+
+    gate = AsyncPolicyGate(admin_url=ADMIN_URL)
+    gate.adjudicate_raw = AsyncMock(return_value=make_decision("Allow"))
+
+    async with gate.trajectory() as traj:
+        obs = Observation.think(thought="I should check permissions first")
+        d = await traj.observe(obs)
+
+    assert d.allow
+    event_body = gate.adjudicate_raw.call_args[0][0]["event"]
+    assert "Observation" in event_body
+    assert "Think" in event_body["Observation"]
+
+
+@pytest.mark.asyncio
+async def test_async_trajectory_observe_returns_deny():
+    """observe() propagates Deny decisions from the harness."""
+    from sondera import Observation
+
+    gate = AsyncPolicyGate(admin_url=ADMIN_URL)
+    gate.adjudicate_raw = AsyncMock(
+        return_value=make_decision("Deny", "HighlyConfidential content detected")
+    )
+
+    async with gate.trajectory() as traj:
+        obs = Observation.shell_output(
+            call_id="call-2",
+            stdout="AWS_SECRET_ACCESS_KEY=AKIA...",
+            exit_code=0,
+        )
+        d = await traj.observe(obs)
+
+    assert d.deny
+    assert "HighlyConfidential" in (d.reason or "")

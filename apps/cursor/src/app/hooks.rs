@@ -10,8 +10,8 @@ use anyhow::Result;
 
 use sondera_harness::{
     Action, Actor, Agent, Control, Decision, Event, FileOpType, FileOperation, FileOperationResult,
-    Harness, Observation, Prompt, ShellCommand, ShellCommandOutput, Started, ToolCall, ToolOutput,
-    TrajectoryEvent, WebFetch, WebFetchOutput,
+    Harness, Observation, Prompt, ShellCommand, ShellCommandOutput, Started, Think, ToolCall,
+    ToolOutput, TrajectoryEvent, WebFetch, WebFetchOutput,
 };
 use tracing::{debug, info, warn};
 
@@ -363,14 +363,25 @@ impl<H: Harness> Hooks<H> {
     ) -> Result<HookResponse> {
         debug!("afterAgentThought event: {:?}", event);
 
-        // Log agent's thinking process - this is observational only
-        info!(
-            "Agent thought (duration: {:?}ms): {}",
-            event.duration_ms,
-            event.text.chars().take(100).collect::<String>()
+        let ev = self.event(
+            &event.common.conversation_id,
+            TrajectoryEvent::Observation(Observation::Think(Think::new(&event.text))),
         );
+        let adjudicated = self.harness.adjudicate(ev).await?;
 
-        Ok(HookResponse::ok())
+        match adjudicated.decision {
+            Decision::Allow => Ok(HookResponse::ok()),
+            Decision::Deny => {
+                let msg = adjudicated.deny_message("Agent thought blocked by policy");
+                warn!("Agent thought denied: {}", msg);
+                Ok(HookResponse::deny_execution(msg))
+            }
+            Decision::Escalate => {
+                let msg = adjudicated.deny_message("Agent thought escalated for review");
+                warn!("Agent thought escalated: {}", msg);
+                Ok(HookResponse::deny_execution(msg))
+            }
+        }
     }
 
     // ============================================================================
