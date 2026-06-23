@@ -12,7 +12,6 @@ struct EscalationRecord {
     agent_id: String,
     status: String,
     annotations: Vec<serde_json::Value>,
-    created_at: Option<i64>,
     expires_at: Option<i64>,
 }
 
