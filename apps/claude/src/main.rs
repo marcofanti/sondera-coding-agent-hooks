@@ -62,6 +62,11 @@ enum Commands {
         #[command(subcommand)]
         action: EscalationAction,
     },
+    /// Inspect live Agent Bill of Materials reports from the admin HTTP server.
+    Agbom {
+        #[command(subcommand)]
+        action: AgbomAction,
+    },
 }
 
 #[tokio::main]
@@ -89,6 +94,7 @@ async fn main() -> Result<()> {
         }
         Commands::Mandate { action } => return handle_mandate(action),
         Commands::Escalations { action } => return handle_escalations(action),
+        Commands::Agbom { action } => return handle_agbom(action),
         _ => {}
     }
 
@@ -97,7 +103,11 @@ async fn main() -> Result<()> {
     let mut hooks = Hooks::new(harness, agent_id("claude"));
 
     let response = match cli.command {
-        Commands::Install { .. } | Commands::Uninstall { .. } | Commands::Mandate { .. } | Commands::Escalations { .. } => unreachable!(),
+        Commands::Install { .. }
+        | Commands::Uninstall { .. }
+        | Commands::Mandate { .. }
+        | Commands::Escalations { .. }
+        | Commands::Agbom { .. } => unreachable!(),
         Commands::PreToolUse => hooks.handle_pre_tool_use(read_stdin()?).await?,
         Commands::PermissionRequest => hooks.handle_permission_request(read_stdin()?).await?,
         Commands::PostToolUse => hooks.handle_post_tool_use(read_stdin()?).await?,

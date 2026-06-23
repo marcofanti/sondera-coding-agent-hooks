@@ -22,6 +22,7 @@
 //!
 //! MIT — see LICENSE in the repository root.
 
+pub mod agbom;
 mod cedar;
 pub mod cedarling;
 pub mod escalation;

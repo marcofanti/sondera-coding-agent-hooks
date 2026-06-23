@@ -1,4 +1,5 @@
 use super::{EscalationRecord, EscalationStore, notify_slack};
+use crate::agbom::{build_agbom, build_agbom_for_trajectory};
 use crate::harness::Harness;
 use crate::observability::{
     EventTelemetry, HTTP_ADJUDICATE_ROUTE, HTTP_APPROVE_ESCALATION_ROUTE,
@@ -6,12 +7,13 @@ use crate::observability::{
     HTTP_STREAM_ESCALATIONS_ROUTE, HttpRouteTelemetry,
 };
 use crate::rpc::HarnessClient;
+use crate::storage::turso::{TrajectoryStore, get_default_db_path};
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
     response::sse::{Event, KeepAlive, Sse},
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde::Deserialize;
@@ -35,16 +37,14 @@ pub struct AdminState {
     pub admin_port: u16,
     /// Path to the harness tarpc Unix socket for the /api/adjudicate proxy endpoint.
     pub harness_socket: Option<PathBuf>,
+    /// Path to the trajectory event database used by read-only reporting endpoints.
+    pub trajectory_db_path: Option<PathBuf>,
     /// Lazily initialized tarpc client shared across handler instances.
     harness_client: Arc<tokio::sync::OnceCell<HarnessClient>>,
 }
 
 impl AdminState {
-    pub fn new(
-        store: EscalationStore,
-        slack_webhook: Option<String>,
-        admin_port: u16,
-    ) -> Self {
+    pub fn new(store: EscalationStore, slack_webhook: Option<String>, admin_port: u16) -> Self {
         let (events_tx, _) = broadcast::channel(256);
         Self {
             store: Arc::new(store),
@@ -52,6 +52,7 @@ impl AdminState {
             slack_webhook,
             admin_port,
             harness_socket: None,
+            trajectory_db_path: get_default_db_path().ok(),
             harness_client: Arc::new(tokio::sync::OnceCell::new()),
         }
     }
@@ -59,6 +60,12 @@ impl AdminState {
     /// Wire a harness socket path for the /api/adjudicate proxy endpoint.
     pub fn with_harness_socket(mut self, socket: PathBuf) -> Self {
         self.harness_socket = Some(socket);
+        self
+    }
+
+    /// Wire a trajectory database path for read-only reporting endpoints.
+    pub fn with_trajectory_db_path(mut self, path: PathBuf) -> Self {
+        self.trajectory_db_path = Some(path);
         self
     }
 
@@ -100,12 +107,14 @@ impl AdminState {
 
 pub fn router(state: AdminState) -> Router {
     Router::new()
-        .route("/api/adjudicate",                post(http_adjudicate))
-        .route("/api/escalations",               get(list_escalations))
-        .route("/api/escalations/stream",        get(sse_stream))
-        .route("/api/escalations/:id",           get(get_escalation))
-        .route("/api/escalations/:id/approve",   post(approve_escalation))
-        .route("/api/escalations/:id/deny",      post(deny_escalation))
+        .route("/api/adjudicate", post(http_adjudicate))
+        .route("/api/agbom", get(get_agbom))
+        .route("/api/trajectories/{id}/agbom", get(get_trajectory_agbom))
+        .route("/api/escalations", get(list_escalations))
+        .route("/api/escalations/stream", get(sse_stream))
+        .route("/api/escalations/{id}", get(get_escalation))
+        .route("/api/escalations/{id}/approve", post(approve_escalation))
+        .route("/api/escalations/{id}/deny", post(deny_escalation))
         .with_state(state)
 }
 
@@ -113,10 +122,7 @@ pub fn router(state: AdminState) -> Router {
 
 /// Proxy an `Event` to the harness tarpc server and return the `Adjudicated` result.
 /// Used by the Python SDK and other non-tarpc clients.
-async fn http_adjudicate(
-    State(s): State<AdminState>,
-    Json(event): Json<crate::Event>,
-) -> Response {
+async fn http_adjudicate(State(s): State<AdminState>, Json(event): Json<crate::Event>) -> Response {
     let telemetry = EventTelemetry::from_event(&event);
     let span = http_span(HTTP_ADJUDICATE_ROUTE);
     span.record("trajectory.id", telemetry.trajectory_id);
@@ -137,7 +143,7 @@ async fn http_adjudicate(
                     record_http_status(StatusCode::OK);
                     Json(adj).into_response()
                 }
-                Err(e)  => {
+                Err(e) => {
                     record_http_status(StatusCode::INTERNAL_SERVER_ERROR);
                     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
                 }
@@ -151,6 +157,47 @@ async fn http_adjudicate(
 #[derive(Deserialize)]
 struct ListQuery {
     status: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct AgbomQuery {
+    agent_id: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+}
+
+async fn open_trajectory_store(
+    state: &AdminState,
+) -> Result<TrajectoryStore, (StatusCode, String)> {
+    let path = state.trajectory_db_path.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "trajectory database path not configured".to_string(),
+        )
+    })?;
+    TrajectoryStore::open(path).await.map_err(internal)
+}
+
+async fn get_agbom(
+    State(s): State<AdminState>,
+    Query(q): Query<AgbomQuery>,
+) -> Result<Json<crate::agbom::AgentBom>, (StatusCode, String)> {
+    let store = open_trajectory_store(&s).await?;
+    build_agbom(&store, q.agent_id.as_deref(), q.limit, q.offset)
+        .await
+        .map(Json)
+        .map_err(internal)
+}
+
+async fn get_trajectory_agbom(
+    State(s): State<AdminState>,
+    Path(id): Path<String>,
+) -> Result<Json<crate::agbom::AgentBom>, (StatusCode, String)> {
+    let store = open_trajectory_store(&s).await?;
+    build_agbom_for_trajectory(&store, &id)
+        .await
+        .map(Json)
+        .map_err(internal)
 }
 
 async fn list_escalations(
@@ -184,11 +231,11 @@ async fn get_escalation(
                 record_http_status(StatusCode::OK);
                 Ok(Json(r))
             }
-            Ok(None)    => {
+            Ok(None) => {
                 record_http_status(StatusCode::NOT_FOUND);
                 Err((StatusCode::NOT_FOUND, format!("escalation {id} not found")))
             }
-            Err(e)      => {
+            Err(e) => {
                 let err = internal(e);
                 record_http_status(err.0);
                 Err(err)
@@ -210,7 +257,10 @@ async fn approve_escalation(
     body: Option<Json<DecisionBody>>,
 ) -> Result<Json<EscalationRecord>, (StatusCode, String)> {
     async move {
-        let who = body.as_ref().and_then(|b| b.decided_by.as_deref()).unwrap_or("operator");
+        let who = body
+            .as_ref()
+            .and_then(|b| b.decided_by.as_deref())
+            .unwrap_or("operator");
         let updated = match s.store.approve(&id, who).await.map_err(internal) {
             Ok(updated) => updated,
             Err(err) => {
@@ -220,7 +270,10 @@ async fn approve_escalation(
         };
         if !updated {
             record_http_status(StatusCode::CONFLICT);
-            return Err((StatusCode::CONFLICT, format!("escalation {id} is no longer pending")));
+            return Err((
+                StatusCode::CONFLICT,
+                format!("escalation {id} is no longer pending"),
+            ));
         }
         fetch_and_broadcast(&s, &id).await
     }
@@ -234,7 +287,10 @@ async fn deny_escalation(
     body: Option<Json<DecisionBody>>,
 ) -> Result<Json<EscalationRecord>, (StatusCode, String)> {
     async move {
-        let who = body.as_ref().and_then(|b| b.decided_by.as_deref()).unwrap_or("operator");
+        let who = body
+            .as_ref()
+            .and_then(|b| b.decided_by.as_deref())
+            .unwrap_or("operator");
         let updated = match s.store.deny(&id, who).await.map_err(internal) {
             Ok(updated) => updated,
             Err(err) => {
@@ -244,7 +300,10 @@ async fn deny_escalation(
         };
         if !updated {
             record_http_status(StatusCode::CONFLICT);
-            return Err((StatusCode::CONFLICT, format!("escalation {id} is no longer pending")));
+            return Err((
+                StatusCode::CONFLICT,
+                format!("escalation {id} is no longer pending"),
+            ));
         }
         fetch_and_broadcast(&s, &id).await
     }
