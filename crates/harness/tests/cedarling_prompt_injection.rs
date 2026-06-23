@@ -22,9 +22,15 @@ fn uid(entity_type: &str, id: &str) -> EntityUid {
     )
 }
 
-fn workload(id: &str) -> EntityUid   { uid("Jans::Workload", id) }
-fn action(name: &str) -> EntityUid   { uid("Jans::Action", name) }
-fn message(id: &str) -> EntityUid    { uid("Jans::Message", id) }
+fn workload(id: &str) -> EntityUid {
+    uid("Jans::Workload", id)
+}
+fn action(name: &str) -> EntityUid {
+    uid("Jans::Action", name)
+}
+fn message(id: &str) -> EntityUid {
+    uid("Jans::Message", id)
+}
 
 fn entities_with_trajectory(traj_id: &str, msg_id: &str) -> Entities {
     Entities::from_json_value(
@@ -73,7 +79,11 @@ fn denies_observe_prompt_with_injection_signature() {
         ),
         entities_with_trajectory("traj-1", "msg-inject-1"),
     );
-    assert_eq!(d, Decision::Deny, "observe_prompt with prompt_injection signature must be denied");
+    assert_eq!(
+        d,
+        Decision::Deny,
+        "observe_prompt with prompt_injection signature must be denied"
+    );
 }
 
 #[test]
@@ -89,7 +99,11 @@ fn denies_observe_prompt_with_indirect_injection_signature() {
         ),
         entities_with_trajectory("traj-2", "msg-indirect-1"),
     );
-    assert_eq!(d, Decision::Deny, "observe_prompt with indirect_injection signature must be denied");
+    assert_eq!(
+        d,
+        Decision::Deny,
+        "observe_prompt with indirect_injection signature must be denied"
+    );
 }
 
 #[test]
@@ -115,7 +129,11 @@ fn denies_observe_prompt_with_critical_severity() {
         ctx,
         entities_with_trajectory("traj-3", "msg-crit-1"),
     );
-    assert_eq!(d, Decision::Deny, "observe_prompt with critical severity must be denied");
+    assert_eq!(
+        d,
+        Decision::Deny,
+        "observe_prompt with critical severity must be denied"
+    );
 }
 
 // ─── ALLOW: clean prompts ────────────────────────────────────────────────────
@@ -127,7 +145,10 @@ fn allows_clean_user_prompt() {
         workload("claude"),
         action("observe_prompt"),
         message("msg-clean-1"),
-        prompt_ctx("Please refactor this function to use iterators.", serde_json::json!([])),
+        prompt_ctx(
+            "Please refactor this function to use iterators.",
+            serde_json::json!([]),
+        ),
         entities_with_trajectory("traj-4", "msg-clean-1"),
     );
     assert_eq!(d, Decision::Allow, "clean user prompt must be allowed");

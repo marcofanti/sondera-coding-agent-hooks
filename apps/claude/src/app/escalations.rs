@@ -63,12 +63,16 @@ pub fn handle_escalations(action: &EscalationAction) -> Result<()> {
     match action {
         EscalationAction::List { admin_url, all } => cmd_list(admin_url, *all),
         EscalationAction::Show { id, admin_url } => cmd_show(admin_url, id),
-        EscalationAction::Approve { id, admin_url, decided_by } => {
-            cmd_decide(admin_url, id, "approve", decided_by)
-        }
-        EscalationAction::Deny { id, admin_url, decided_by } => {
-            cmd_decide(admin_url, id, "deny", decided_by)
-        }
+        EscalationAction::Approve {
+            id,
+            admin_url,
+            decided_by,
+        } => cmd_decide(admin_url, id, "approve", decided_by),
+        EscalationAction::Deny {
+            id,
+            admin_url,
+            decided_by,
+        } => cmd_decide(admin_url, id, "deny", decided_by),
     }
 }
 
@@ -111,10 +115,7 @@ fn cmd_list(admin_url: &str, all: bool) -> Result<()> {
 }
 
 fn cmd_show(admin_url: &str, id: &str) -> Result<()> {
-    let url = format!(
-        "{}/api/escalations/{id}",
-        admin_url.trim_end_matches('/')
-    );
+    let url = format!("{}/api/escalations/{id}", admin_url.trim_end_matches('/'));
     let record: serde_json::Value = reqwest::blocking::get(&url)
         .with_context(|| format!("GET {url}"))?
         .error_for_status()

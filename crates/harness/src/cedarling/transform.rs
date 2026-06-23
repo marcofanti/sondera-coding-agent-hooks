@@ -10,7 +10,10 @@ use std::str::FromStr;
 pub fn jans_uid(entity_type: &str, id: &str) -> Result<EntityUid> {
     let type_name = EntityTypeName::from_str(entity_type)
         .with_context(|| format!("Invalid entity type name: {entity_type}"))?;
-    Ok(EntityUid::from_type_name_and_id(type_name, EntityId::new(id)))
+    Ok(EntityUid::from_type_name_and_id(
+        type_name,
+        EntityId::new(id),
+    ))
 }
 
 // ─── Trajectory context ───────────────────────────────────────────────────────
@@ -89,15 +92,15 @@ fn build_entities(
 // ─── Signature / policy / label helpers ──────────────────────────────────────
 
 fn sig_from_raw(raw: Option<&serde_json::Value>) -> serde_json::Value {
-    raw.and_then(|r| r.get("signature")).cloned().unwrap_or_else(|| {
-        serde_json::json!({"matches": 0, "categories": [], "severity": 0})
-    })
+    raw.and_then(|r| r.get("signature"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({"matches": 0, "categories": [], "severity": 0}))
 }
 
 fn policy_from_raw(raw: Option<&serde_json::Value>) -> serde_json::Value {
-    raw.and_then(|r| r.get("policy")).cloned().unwrap_or_else(|| {
-        serde_json::json!({"compliant": true, "violations": []})
-    })
+    raw.and_then(|r| r.get("policy"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({"compliant": true, "violations": []}))
 }
 
 fn label_from_raw(raw: Option<&serde_json::Value>) -> serde_json::Value {
@@ -107,9 +110,11 @@ fn label_from_raw(raw: Option<&serde_json::Value>) -> serde_json::Value {
 }
 
 fn workspace_from_raw(raw: Option<&serde_json::Value>) -> serde_json::Value {
-    raw.and_then(|r| r.get("workspace")).cloned().unwrap_or_else(|| {
-        serde_json::json!({"cwd": "", "permission_mode": "default", "transcript_path": ""})
-    })
+    raw.and_then(|r| r.get("workspace"))
+        .cloned()
+        .unwrap_or_else(
+            || serde_json::json!({"cwd": "", "permission_mode": "default", "transcript_path": ""}),
+        )
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
@@ -183,8 +188,7 @@ pub fn build_request_with_raw(
             // Browser and communication sub-actions use the prompt field as the Cedar action name.
             let cedar_action = match wf.prompt.as_str() {
                 "navigate" | "fill_form" | "submit_form" | "evaluate_script"
-                | "take_screenshot"
-                | "send_email" | "read_email" | "list_emails"
+                | "take_screenshot" | "send_email" | "read_email" | "list_emails"
                 | "read_calendar" | "create_event" | "update_event" | "delete_event" => {
                     wf.prompt.as_str()
                 }
@@ -210,9 +214,9 @@ pub fn build_request_with_raw(
 
         TrajectoryEvent::Action(Action::FileOperation(fo)) => {
             let action_name = match fo.operation {
-                FileOpType::Read   => "read_file",
-                FileOpType::Write  => "write_file",
-                FileOpType::Edit   => "edit_file",
+                FileOpType::Read => "read_file",
+                FileOpType::Write => "write_file",
+                FileOpType::Edit => "edit_file",
                 FileOpType::Delete => "delete_file",
             };
             let action = jans_uid("Jans::Action", action_name)?;
@@ -364,14 +368,16 @@ pub fn build_request_with_raw(
         }
 
         other => {
-            anyhow::bail!(
-                "CedarlingPolicyEngine: unsupported event type: {:?}",
-                other
-            )
+            anyhow::bail!("CedarlingPolicyEngine: unsupported event type: {:?}", other)
         }
     };
 
-    let entities = build_entities(&event.agent.id, &event.agent.provider_id, &tctx, extra_entities)?;
+    let entities = build_entities(
+        &event.agent.id,
+        &event.agent.provider_id,
+        &tctx,
+        extra_entities,
+    )?;
     Ok((principal, action, resource, context, entities))
 }
 

@@ -29,20 +29,19 @@ impl CedarlingStore {
             .with_context(|| format!("Failed to read {}", schema_path.display()))?;
         let schema_value: serde_json::Value = serde_json::from_str(&schema_str)
             .with_context(|| format!("Failed to parse {} as JSON", schema_path.display()))?;
-        let schema = Schema::from_json_value(schema_value)
-            .with_context(|| format!("Failed to build Cedar schema from {}", schema_path.display()))?;
+        let schema = Schema::from_json_value(schema_value).with_context(|| {
+            format!(
+                "Failed to build Cedar schema from {}",
+                schema_path.display()
+            )
+        })?;
 
         // --- Policies ---
         let mut policy_set = PolicySet::new();
         let mut entries: Vec<_> = std::fs::read_dir(dir)
             .with_context(|| format!("Failed to read directory {}", dir.display()))?
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .and_then(|x| x.to_str())
-                    == Some("cedar")
-            })
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("cedar"))
             .collect();
         // Sort for deterministic loading order
         entries.sort_by_key(|e| e.path());

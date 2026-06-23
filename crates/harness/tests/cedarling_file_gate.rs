@@ -22,9 +22,15 @@ fn uid(entity_type: &str, id: &str) -> EntityUid {
     )
 }
 
-fn workload(id: &str) -> EntityUid { uid("Jans::Workload", id) }
-fn action(name: &str) -> EntityUid { uid("Jans::Action", name) }
-fn file(path: &str) -> EntityUid   { uid("Jans::File", path) }
+fn workload(id: &str) -> EntityUid {
+    uid("Jans::Workload", id)
+}
+fn action(name: &str) -> EntityUid {
+    uid("Jans::Action", name)
+}
+fn file(path: &str) -> EntityUid {
+    uid("Jans::File", path)
+}
 
 fn basic_entities(agent_id: &str) -> Entities {
     let json = serde_json::json!([
@@ -80,7 +86,11 @@ fn allows_read_rust_source() {
         clean_read_context("src/main.rs"),
         basic_entities("claude"),
     );
-    assert_eq!(decision, Decision::Allow, "reading .rs file must be allowed");
+    assert_eq!(
+        decision,
+        Decision::Allow,
+        "reading .rs file must be allowed"
+    );
 }
 
 #[test]
@@ -93,7 +103,11 @@ fn allows_write_normal_file() {
         clean_write_context("src/lib.rs"),
         basic_entities("claude"),
     );
-    assert_eq!(decision, Decision::Allow, "writing .rs file must be allowed");
+    assert_eq!(
+        decision,
+        Decision::Allow,
+        "writing .rs file must be allowed"
+    );
 }
 
 // ─── DENY: private key reads ─────────────────────────────────────────────────
@@ -143,9 +157,17 @@ fn denies_write_secrets_into_env() {
     )
     .unwrap();
     let decision = e.is_authorized(
-        workload("claude"), action("write_file"), file(".env"), ctx, basic_entities("claude"),
+        workload("claude"),
+        action("write_file"),
+        file(".env"),
+        ctx,
+        basic_entities("claude"),
     );
-    assert_eq!(decision, Decision::Deny, "writing secrets to .env must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "writing secrets to .env must be denied"
+    );
 }
 
 // ─── DENY: SC2 injection in source files ─────────────────────────────────────
@@ -167,9 +189,17 @@ fn denies_write_sql_injection() {
     )
     .unwrap();
     let decision = e.is_authorized(
-        workload("claude"), action("write_file"), file("db/queries.sql"), ctx, basic_entities("claude"),
+        workload("claude"),
+        action("write_file"),
+        file("db/queries.sql"),
+        ctx,
+        basic_entities("claude"),
     );
-    assert_eq!(decision, Decision::Deny, "writing SQL injection must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "writing SQL injection must be denied"
+    );
 }
 
 // ─── DENY: SC3 secrets exposure ───────────────────────────────────────────────
@@ -191,9 +221,17 @@ fn denies_hardcoded_secret_in_python() {
     )
     .unwrap();
     let decision = e.is_authorized(
-        workload("claude"), action("write_file"), file("auth/config.py"), ctx, basic_entities("claude"),
+        workload("claude"),
+        action("write_file"),
+        file("auth/config.py"),
+        ctx,
+        basic_entities("claude"),
     );
-    assert_eq!(decision, Decision::Deny, "hardcoded secrets in Python must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "hardcoded secrets in Python must be denied"
+    );
 }
 
 // ─── DENY: file policy violation ─────────────────────────────────────────────
@@ -215,7 +253,15 @@ fn denies_policy_violation_on_file_write() {
     )
     .unwrap();
     let decision = e.is_authorized(
-        workload("claude"), action("write_file"), file("output/report.csv"), ctx, basic_entities("claude"),
+        workload("claude"),
+        action("write_file"),
+        file("output/report.csv"),
+        ctx,
+        basic_entities("claude"),
     );
-    assert_eq!(decision, Decision::Deny, "non-compliant file write must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "non-compliant file write must be denied"
+    );
 }

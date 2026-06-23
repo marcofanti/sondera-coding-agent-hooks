@@ -4,11 +4,10 @@ mod transform;
 use crate::cedar::entity::{Trajectory, euid as old_euid};
 use crate::policy_engine::{PolicyEngine, PolicyEvaluation, SyncAuthorize};
 use crate::storage::entity::EntityStore;
-use crate::{Adjudicated, Annotation, Decision, Event, TrajectoryEvent, Action, Observation};
+use crate::{Action, Adjudicated, Annotation, Decision, Event, Observation, TrajectoryEvent};
 use anyhow::{Context as _, Result};
 use cedar_policy::{
-    Authorizer, Context, Decision as CedarDecision, Entities, EntityUid, PolicySet, Request,
-    Schema,
+    Authorizer, Context, Decision as CedarDecision, Entities, EntityUid, PolicySet, Request, Schema,
 };
 use sondera_information_flow_control::{DataModel, Label};
 use sondera_policy::PolicyModel;
@@ -42,8 +41,11 @@ impl Guardrails {
     async fn compute(&self, content: &str) -> serde_json::Value {
         let sig = sondera_signature::scan(content);
         let severity: i64 = sig.severity.into();
-        let categories: Vec<serde_json::Value> =
-            sig.categories.iter().map(|c| serde_json::json!(c)).collect();
+        let categories: Vec<serde_json::Value> = sig
+            .categories
+            .iter()
+            .map(|c| serde_json::json!(c))
+            .collect();
         let matches: i64 = sig.matches.len() as i64;
 
         let label_str = if let Some(ref dm) = self.ifc {
@@ -231,7 +233,11 @@ impl CedarlingPolicyEngine {
 
         Adjudicated {
             decision,
-            reason: if errors.is_empty() { None } else { Some(errors.join("; ")) },
+            reason: if errors.is_empty() {
+                None
+            } else {
+                Some(errors.join("; "))
+            },
             annotations,
             escalation_id: None,
         }
@@ -273,20 +279,21 @@ impl PolicyEngine for CedarlingPolicyEngine {
 
         // Build effective raw: guardrail fills gaps only — event.raw wins for
         // any field already present there (the hook ran closer to the content).
-        let effective_raw: Option<serde_json::Value> = match (guardrail_ctx.as_ref(), event.raw.as_ref()) {
-            (Some(g), Some(r)) => {
-                // Start from guardrail defaults, then overwrite with the hook's values.
-                let mut merged = g.clone();
-                if let (Some(obj), Some(r_obj)) = (merged.as_object_mut(), r.as_object()) {
-                    for (k, v) in r_obj {
-                        obj.insert(k.clone(), v.clone());
+        let effective_raw: Option<serde_json::Value> =
+            match (guardrail_ctx.as_ref(), event.raw.as_ref()) {
+                (Some(g), Some(r)) => {
+                    // Start from guardrail defaults, then overwrite with the hook's values.
+                    let mut merged = g.clone();
+                    if let (Some(obj), Some(r_obj)) = (merged.as_object_mut(), r.as_object()) {
+                        for (k, v) in r_obj {
+                            obj.insert(k.clone(), v.clone());
+                        }
                     }
+                    Some(merged)
                 }
-                Some(merged)
-            }
-            (Some(g), None) => Some(g.clone()),
-            (None, raw) => raw.cloned(),
-        };
+                (Some(g), None) => Some(g.clone()),
+                (None, raw) => raw.cloned(),
+            };
 
         let (principal, action, resource, context, entities) =
             transform::build_request_with_raw(event, entity_store, effective_raw.as_ref())?;
@@ -336,9 +343,7 @@ impl PolicyEngine for CedarlingPolicyEngine {
 fn extract_scannable(event: &Event) -> Option<String> {
     match &event.event {
         TrajectoryEvent::Action(Action::ShellCommand(sc)) => Some(sc.command.clone()),
-        TrajectoryEvent::Action(Action::WebFetch(wf)) => {
-            Some(format!("{} {}", wf.url, wf.prompt))
-        }
+        TrajectoryEvent::Action(Action::WebFetch(wf)) => Some(format!("{} {}", wf.url, wf.prompt)),
         TrajectoryEvent::Action(Action::FileOperation(fo)) => {
             let mut s = fo.path.clone();
             if let Some(ref content) = fo.content {
@@ -355,13 +360,9 @@ fn extract_scannable(event: &Event) -> Option<String> {
         TrajectoryEvent::Observation(Observation::ShellCommandOutput(sco)) => {
             Some(format!("{} {}", sco.stdout, sco.stderr))
         }
-        TrajectoryEvent::Observation(Observation::FileOperationResult(fo)) => {
-            fo.content.clone()
-        }
+        TrajectoryEvent::Observation(Observation::FileOperationResult(fo)) => fo.content.clone(),
         TrajectoryEvent::Observation(Observation::WebFetchOutput(wfo)) => Some(wfo.result.clone()),
-        TrajectoryEvent::Observation(Observation::ToolOutput(to)) => {
-            Some(to.output.to_string())
-        }
+        TrajectoryEvent::Observation(Observation::ToolOutput(to)) => Some(to.output.to_string()),
         TrajectoryEvent::Control(_) | TrajectoryEvent::State(_) => None,
     }
 }
@@ -388,7 +389,8 @@ fn propagate_label(new_label: Label, trajectory_id: &str, entity_store: &EntityS
         );
         let updated = match entity_store.get(&uid).ok().flatten() {
             Some(entity) => {
-                let mut traj = Trajectory::try_from(entity).unwrap_or_else(|_| Trajectory::new(trajectory_id));
+                let mut traj =
+                    Trajectory::try_from(entity).unwrap_or_else(|_| Trajectory::new(trajectory_id));
                 traj.label = new_label;
                 traj
             }

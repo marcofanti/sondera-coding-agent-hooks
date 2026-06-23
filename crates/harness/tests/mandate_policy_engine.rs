@@ -60,7 +60,8 @@ fn ceiling_allow_and_mandate_allow_gives_allow() {
             action == Jans::Action::"exec_command",
             resource == Jans::Shell::"git"
         );
-    "#.to_string();
+    "#
+    .to_string();
 
     let claims = jwt::MandateClaims {
         sub: "agent-1".to_string(),
@@ -131,7 +132,11 @@ fn ceiling_deny_overrides_mandate_allow() {
         ).unwrap(),
         Some(&token),
     );
-    assert_eq!(d, Decision::Deny, "ceiling deny must override mandate allow");
+    assert_eq!(
+        d,
+        Decision::Deny,
+        "ceiling deny must override mandate allow"
+    );
 }
 
 // ─── Ceiling allow + mandate deny → Deny ────────────────────────────────────
@@ -153,7 +158,8 @@ fn mandate_deny_overrides_ceiling_allow() {
                 action == Jans::Action::"exec_command",
                 resource == Jans::Shell::"cargo"
             );
-        "#.to_string(),
+        "#
+        .to_string(),
     };
     let token = jwt::sign_mandate(&signing_key, &claims).unwrap();
 
@@ -169,7 +175,11 @@ fn mandate_deny_overrides_ceiling_allow() {
         basic_entities(),
         Some(&token),
     );
-    assert_eq!(d, Decision::Deny, "mandate deny must override ceiling allow");
+    assert_eq!(
+        d,
+        Decision::Deny,
+        "mandate deny must override ceiling allow"
+    );
 }
 
 // ─── Invalid or absent mandate JWT → Deny when mandate is required ───────────
@@ -206,5 +216,9 @@ fn missing_mandate_is_denied_when_required() {
         basic_entities(),
         None, // no mandate
     );
-    assert_eq!(d, Decision::Deny, "absent mandate must be denied when mandate is required");
+    assert_eq!(
+        d,
+        Decision::Deny,
+        "absent mandate must be denied when mandate is required"
+    );
 }

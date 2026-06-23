@@ -1,8 +1,8 @@
 use anyhow::{Context as _, Result};
 use clap::Subcommand;
 use sondera_harness::mandate::jwt::{
-    generate_keypair, load_verifying_key, save_verifying_key, sign_mandate, verify_mandate,
-    MandateClaims,
+    MandateClaims, generate_keypair, load_verifying_key, save_verifying_key, sign_mandate,
+    verify_mandate,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -45,7 +45,10 @@ pub enum MandateAction {
 
 pub fn handle_mandate(action: &MandateAction) -> Result<()> {
     match action {
-        MandateAction::Keygen { signing_key, verifying_key } => {
+        MandateAction::Keygen {
+            signing_key,
+            verifying_key,
+        } => {
             let (sk, vk) = generate_keypair();
             std::fs::write(signing_key, sk.as_bytes())
                 .with_context(|| format!("write signing key to {:?}", signing_key))?;
@@ -56,7 +59,13 @@ pub fn handle_mandate(action: &MandateAction) -> Result<()> {
             Ok(())
         }
 
-        MandateAction::Sign { signing_key, agent_id, policy, issuer, exp_secs } => {
+        MandateAction::Sign {
+            signing_key,
+            agent_id,
+            policy,
+            issuer,
+            exp_secs,
+        } => {
             let sk_bytes = std::fs::read(signing_key)
                 .with_context(|| format!("read signing key {:?}", signing_key))?;
             let sk_arr: [u8; 32] = sk_bytes
@@ -73,10 +82,10 @@ pub fn handle_mandate(action: &MandateAction) -> Result<()> {
                 .unwrap_or(0);
 
             let claims = MandateClaims {
-                sub:    agent_id.clone(),
-                iss:    issuer.clone(),
-                iat:    now,
-                exp:    now + exp_secs,
+                sub: agent_id.clone(),
+                iss: issuer.clone(),
+                iat: now,
+                exp: now + exp_secs,
                 policy: policy_text,
             };
 
@@ -90,7 +99,9 @@ pub fn handle_mandate(action: &MandateAction) -> Result<()> {
             let token = {
                 use std::io::Read;
                 let mut buf = String::new();
-                std::io::stdin().read_to_string(&mut buf).context("read token from stdin")?;
+                std::io::stdin()
+                    .read_to_string(&mut buf)
+                    .context("read token from stdin")?;
                 buf.trim().to_string()
             };
             let claims = verify_mandate(&token, &vk)?;

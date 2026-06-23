@@ -18,8 +18,11 @@ pub const HTTP_STREAM_ESCALATIONS_ROUTE: HttpRouteTelemetry =
     HttpRouteTelemetry::new("GET", "/api/escalations/stream", "stream_escalations");
 pub const HTTP_GET_ESCALATION_ROUTE: HttpRouteTelemetry =
     HttpRouteTelemetry::new("GET", "/api/escalations/{id}", "get_escalation");
-pub const HTTP_APPROVE_ESCALATION_ROUTE: HttpRouteTelemetry =
-    HttpRouteTelemetry::new("POST", "/api/escalations/{id}/approve", "approve_escalation");
+pub const HTTP_APPROVE_ESCALATION_ROUTE: HttpRouteTelemetry = HttpRouteTelemetry::new(
+    "POST",
+    "/api/escalations/{id}/approve",
+    "approve_escalation",
+);
 pub const HTTP_DENY_ESCALATION_ROUTE: HttpRouteTelemetry =
     HttpRouteTelemetry::new("POST", "/api/escalations/{id}/deny", "deny_escalation");
 
@@ -143,11 +146,7 @@ pub struct HttpRouteTelemetry {
 }
 
 impl HttpRouteTelemetry {
-    pub const fn new(
-        method: &'static str,
-        route: &'static str,
-        operation: &'static str,
-    ) -> Self {
+    pub const fn new(method: &'static str, route: &'static str, operation: &'static str) -> Self {
         Self {
             method,
             route,

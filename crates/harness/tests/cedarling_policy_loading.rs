@@ -22,9 +22,7 @@ fn loads_all_cedar_files() {
 #[test]
 fn default_permit_policy_is_present() {
     let e = engine();
-    let policy = e
-        .policy_set()
-        .policy(&"default-permit".parse().unwrap());
+    let policy = e.policy_set().policy(&"default-permit".parse().unwrap());
     assert!(
         policy.is_some(),
         "policy set must contain @id(\"default-permit\")"

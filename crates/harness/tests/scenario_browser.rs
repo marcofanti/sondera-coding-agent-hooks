@@ -26,9 +26,15 @@ fn uid(entity_type: &str, id: &str) -> EntityUid {
     )
 }
 
-fn workload(id: &str) -> EntityUid { uid("Jans::Workload", id) }
-fn action(name: &str) -> EntityUid { uid("Jans::Action", name) }
-fn api(domain: &str) -> EntityUid  { uid("Jans::API", domain) }
+fn workload(id: &str) -> EntityUid {
+    uid("Jans::Workload", id)
+}
+fn action(name: &str) -> EntityUid {
+    uid("Jans::Action", name)
+}
+fn api(domain: &str) -> EntityUid {
+    uid("Jans::API", domain)
+}
 
 fn entities(agent_id: &str) -> Entities {
     let json = serde_json::json!([
@@ -66,7 +72,11 @@ fn allows_navigate_known_domain() {
         clean_nav_ctx("https://www.booking.com/hotels"),
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Allow, "navigate to booking.com must be allowed");
+    assert_eq!(
+        decision,
+        Decision::Allow,
+        "navigate to booking.com must be allowed"
+    );
 }
 
 // ─── ALLOW: form fill (non-password) ─────────────────────────────────────────
@@ -93,7 +103,11 @@ fn allows_fill_form_text_field() {
         ctx,
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Allow, "fill_form on text field must be allowed");
+    assert_eq!(
+        decision,
+        Decision::Allow,
+        "fill_form on text field must be allowed"
+    );
 }
 
 // ─── ALLOW: screenshot ───────────────────────────────────────────────────────
@@ -118,7 +132,11 @@ fn allows_take_screenshot() {
         ctx,
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Allow, "take_screenshot must be allowed by default");
+    assert_eq!(
+        decision,
+        Decision::Allow,
+        "take_screenshot must be allowed by default"
+    );
 }
 
 // ─── ESCALATE: submit_form (paradigm case) ───────────────────────────────────
@@ -150,7 +168,11 @@ fn escalates_submit_form() {
         ctx,
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Deny, "submit_form must be denied by Cedar (promoted to Escalate by harness)");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "submit_form must be denied by Cedar (promoted to Escalate by harness)"
+    );
 }
 
 // ─── DENY: navigation with exfiltration taint ────────────────────────────────
@@ -179,7 +201,11 @@ fn denies_navigate_exfiltration_taint() {
         ctx,
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Deny, "navigate with exfiltration taint must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "navigate with exfiltration taint must be denied"
+    );
 }
 
 // ─── DENY: navigation with HighlyConfidential trajectory ─────────────────────
@@ -208,7 +234,11 @@ fn denies_navigate_highly_confidential() {
         ctx,
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Deny, "navigate with HighlyConfidential trajectory must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "navigate with HighlyConfidential trajectory must be denied"
+    );
 }
 
 // ─── DENY: fill_form on password field ───────────────────────────────────────
@@ -235,7 +265,11 @@ fn denies_fill_password_field() {
         ctx,
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Deny, "fill_form on password field must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "fill_form on password field must be denied"
+    );
 }
 
 // ─── DENY: fill_form with credential YARA match ──────────────────────────────
@@ -262,7 +296,11 @@ fn denies_fill_form_credential_detected() {
         ctx,
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Deny, "fill_form with credential YARA match must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "fill_form with credential YARA match must be denied"
+    );
 }
 
 // ─── DENY: evaluate_script with high severity ────────────────────────────────
@@ -289,7 +327,11 @@ fn denies_evaluate_script_high_severity() {
         ctx,
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Deny, "evaluate_script with high severity must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "evaluate_script with high severity must be denied"
+    );
 }
 
 // ─── DENY: evaluate_script reading document.cookie ───────────────────────────
@@ -316,7 +358,11 @@ fn denies_evaluate_script_credential_access() {
         ctx,
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Deny, "evaluate_script with credential_access YARA must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "evaluate_script with credential_access YARA must be denied"
+    );
 }
 
 // ─── DENY: screenshot with HighlyConfidential trajectory ─────────────────────
@@ -344,5 +390,9 @@ fn denies_screenshot_highly_confidential() {
         ctx,
         entities("playwright-agent"),
     );
-    assert_eq!(decision, Decision::Deny, "take_screenshot with HighlyConfidential trajectory must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "take_screenshot with HighlyConfidential trajectory must be denied"
+    );
 }

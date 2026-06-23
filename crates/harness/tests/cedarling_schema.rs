@@ -81,7 +81,13 @@ fn schema_contains_exec_command_and_call_api() {
 fn schema_contains_all_file_actions() {
     let e = engine();
     let actions: Vec<String> = e.schema().actions().map(|a| a.to_string()).collect();
-    for expected in ["read_file", "write_file", "edit_file", "delete_file", "observe_file_result"] {
+    for expected in [
+        "read_file",
+        "write_file",
+        "edit_file",
+        "delete_file",
+        "observe_file_result",
+    ] {
         assert!(
             actions.iter().any(|a| a.contains(expected)),
             "schema must contain action {expected:?}, got: {actions:?}"
@@ -93,7 +99,12 @@ fn schema_contains_all_file_actions() {
 fn schema_contains_observe_actions() {
     let e = engine();
     let actions: Vec<String> = e.schema().actions().map(|a| a.to_string()).collect();
-    for expected in ["observe_prompt", "observe_exec_output", "observe_api_output", "observe_tool_output"] {
+    for expected in [
+        "observe_prompt",
+        "observe_exec_output",
+        "observe_api_output",
+        "observe_tool_output",
+    ] {
         assert!(
             actions.iter().any(|a| a.contains(expected)),
             "schema must contain action {expected:?}, got: {actions:?}"
