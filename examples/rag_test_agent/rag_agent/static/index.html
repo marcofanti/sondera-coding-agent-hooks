@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAG Test Agent</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>RAG Test Agent</h1>
+            <p id="stats">No index loaded</p>
+          </div>
+          <div class="provider" id="provider">provider: unknown</div>
+        </header>
+
+        <form id="index-form" class="folder-row">
+          <label for="folder-path">Folder</label>
+          <input id="folder-path" name="folder-path" autocomplete="off" placeholder="/path/to/folder" />
+          <button type="submit">Index</button>
+        </form>
+
+        <section class="status-panel" aria-live="polite">
+          <div class="status-line">
+            <span id="job-state">Idle</span>
+            <span id="job-counts"></span>
+          </div>
+          <ol id="events"></ol>
+        </section>
+
+        <form id="ask-form" class="ask-panel">
+          <textarea id="question" rows="3" placeholder="Ask the indexed folder"></textarea>
+          <div class="ask-actions">
+            <input id="root-filter" placeholder="root filter, optional" />
+            <button type="submit">Ask</button>
+          </div>
+        </form>
+
+        <section class="answer-panel">
+          <h2>Answer</h2>
+          <p id="answer">Index a folder, then ask a question.</p>
+        </section>
+      </section>
+
+      <aside class="sources">
+        <h2>Sources</h2>
+        <div id="sources"></div>
+      </aside>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

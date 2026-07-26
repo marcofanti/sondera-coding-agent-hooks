@@ -1,7 +1,7 @@
 # OpenTelemetry Implementation Tracking
 
 **Branch:** `feature/otel-observability`  
-**Worktree:** `/Users/mfanti/AgenticAIEngineering/sondera-coding-agent-hooks-otel`  
+**Worktree:** `/Users/mfanti/Documents/AgenticAI/projects/hooks/sondera-coding-agent-hooks-otel`  
 **Started:** 2026-06-21  
 **Tracking fallback:** Beads `br` is not installed in this environment, so this
 file tracks work items for the branch.
