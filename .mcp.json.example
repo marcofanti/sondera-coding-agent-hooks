@@ -1,0 +1,12 @@
+{
+  "//": "Copy to .mcp.json (gitignored) to register the Cedar policy-authoring MCP server with an MCP client (Claude Code, Cursor, etc.). Build first: cargo build -p sondera-mcp --bin cedar-mcp",
+  "mcpServers": {
+    "cedar": {
+      "command": "cargo",
+      "args": ["run", "--quiet", "-p", "sondera-mcp", "--bin", "cedar-mcp"],
+      "env": {
+        "RUST_LOG": "info"
+      }
+    }
+  }
+}

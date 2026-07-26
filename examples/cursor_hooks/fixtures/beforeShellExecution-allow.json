@@ -1,0 +1,12 @@
+{
+  "conversation_id": "__SID__",
+  "generation_id": "g1",
+  "model": "claude",
+  "hook_event_name": "beforeShellExecution",
+  "cursor_version": "1.7.2",
+  "workspace_roots": [
+    "__CWD__"
+  ],
+  "command": "git status",
+  "cwd": "__CWD__"
+}

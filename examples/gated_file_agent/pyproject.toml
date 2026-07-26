@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gated-file-agent"
+version = "0.1.0"
+description = "Sample agent whose MCP filesystem server adjudicates every tool call through the Sondera harness"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.13",
+    "sondera",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+gated-file-agent = "gated_agent.agent:main"
+
+[tool.uv.sources]
+sondera = { path = "../../sondera-python", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["gated_agent"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

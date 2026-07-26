@@ -32,3 +32,8 @@ __pycache__/
 
 .agents/
 .claude/
+
+# e2e test campaign
+examples/*/.venv/
+.mcp.json
+.rag-test-agent/

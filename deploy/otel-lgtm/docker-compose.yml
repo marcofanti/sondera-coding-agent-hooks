@@ -1,0 +1,11 @@
+services:
+  otel-lgtm:
+    image: grafana/otel-lgtm:latest
+    container_name: sondera-otel-lgtm
+    ports:
+      - "3000:3000" # Grafana UI (anonymous admin access enabled by the image)
+      - "4317:4317" # OTLP gRPC (harness default with --otel-protocol grpc)
+      - "4318:4318" # OTLP HTTP (harness with --otel-protocol http)
+    environment:
+      - ENABLE_LOGS_ALL=false
+    restart: unless-stopped
