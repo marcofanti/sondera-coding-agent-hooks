@@ -93,8 +93,8 @@ async fn main() -> Result<()> {
             return uninstall_hooks(scope);
         }
         Commands::Mandate { action } => return handle_mandate(action),
-        Commands::Escalations { action } => return handle_escalations(action),
-        Commands::Agbom { action } => return handle_agbom(action),
+        Commands::Escalations { action } => return handle_escalations(action).await,
+        Commands::Agbom { action } => return handle_agbom(action).await,
         _ => {}
     }
 

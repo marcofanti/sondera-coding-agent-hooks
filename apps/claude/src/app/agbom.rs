@@ -28,7 +28,7 @@ pub enum AgbomOutput {
     Json,
 }
 
-pub fn handle_agbom(action: &AgbomAction) -> Result<()> {
+pub async fn handle_agbom(action: &AgbomAction) -> Result<()> {
     match action {
         AgbomAction::Show {
             admin_url,
@@ -37,11 +37,13 @@ pub fn handle_agbom(action: &AgbomAction) -> Result<()> {
             output: _,
         } => {
             let url = build_agbom_url(admin_url, trajectory_id.as_deref(), agent_id.as_deref());
-            let value: serde_json::Value = reqwest::blocking::get(&url)
+            let value: serde_json::Value = reqwest::get(&url)
+                .await
                 .with_context(|| format!("GET {url}"))?
                 .error_for_status()
                 .with_context(|| "Admin server returned an error")?
                 .json()
+                .await
                 .context("Failed to parse AgBOM response")?;
             println!("{}", serde_json::to_string_pretty(&value)?);
             Ok(())

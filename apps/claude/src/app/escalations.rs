@@ -58,30 +58,32 @@ pub enum EscalationAction {
     },
 }
 
-pub fn handle_escalations(action: &EscalationAction) -> Result<()> {
+pub async fn handle_escalations(action: &EscalationAction) -> Result<()> {
     match action {
-        EscalationAction::List { admin_url, all } => cmd_list(admin_url, *all),
-        EscalationAction::Show { id, admin_url } => cmd_show(admin_url, id),
+        EscalationAction::List { admin_url, all } => cmd_list(admin_url, *all).await,
+        EscalationAction::Show { id, admin_url } => cmd_show(admin_url, id).await,
         EscalationAction::Approve {
             id,
             admin_url,
             decided_by,
-        } => cmd_decide(admin_url, id, "approve", decided_by),
+        } => cmd_decide(admin_url, id, "approve", decided_by).await,
         EscalationAction::Deny {
             id,
             admin_url,
             decided_by,
-        } => cmd_decide(admin_url, id, "deny", decided_by),
+        } => cmd_decide(admin_url, id, "deny", decided_by).await,
     }
 }
 
-fn cmd_list(admin_url: &str, all: bool) -> Result<()> {
+async fn cmd_list(admin_url: &str, all: bool) -> Result<()> {
     let url = format!("{}/api/escalations", admin_url.trim_end_matches('/'));
-    let records: Vec<EscalationRecord> = reqwest::blocking::get(&url)
+    let records: Vec<EscalationRecord> = reqwest::get(&url)
+        .await
         .with_context(|| format!("GET {url}"))?
         .error_for_status()
         .with_context(|| "Admin server returned an error")?
         .json()
+        .await
         .context("Failed to parse escalation list")?;
 
     let filtered: Vec<&EscalationRecord> = if all {
@@ -113,36 +115,39 @@ fn cmd_list(admin_url: &str, all: bool) -> Result<()> {
     Ok(())
 }
 
-fn cmd_show(admin_url: &str, id: &str) -> Result<()> {
+async fn cmd_show(admin_url: &str, id: &str) -> Result<()> {
     let url = format!("{}/api/escalations/{id}", admin_url.trim_end_matches('/'));
-    let record: serde_json::Value = reqwest::blocking::get(&url)
+    let record: serde_json::Value = reqwest::get(&url)
+        .await
         .with_context(|| format!("GET {url}"))?
         .error_for_status()
         .with_context(|| format!("Escalation {id} not found"))?
         .json()
+        .await
         .context("Failed to parse escalation record")?;
 
     println!("{}", serde_json::to_string_pretty(&record)?);
     Ok(())
 }
 
-fn cmd_decide(admin_url: &str, id: &str, action: &str, decided_by: &str) -> Result<()> {
+async fn cmd_decide(admin_url: &str, id: &str, action: &str, decided_by: &str) -> Result<()> {
     let url = format!(
         "{}/api/escalations/{id}/{action}",
         admin_url.trim_end_matches('/')
     );
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::Client::new();
     let resp = client
         .post(&url)
         .json(&serde_json::json!({"decided_by": decided_by}))
         .send()
+        .await
         .with_context(|| format!("POST {url}"))?;
 
     if resp.status().is_success() {
         println!("Escalation {id} {action}d by {decided_by}.");
     } else {
         let status = resp.status();
-        let body = resp.text().unwrap_or_default();
+        let body = resp.text().await.unwrap_or_default();
         anyhow::bail!("Admin server returned {status}: {body}");
     }
     Ok(())
