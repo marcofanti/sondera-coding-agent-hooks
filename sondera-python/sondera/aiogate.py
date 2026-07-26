@@ -153,7 +153,7 @@ class AsyncPolicyGate:
                 "parent_id": None,
             },
             "event": action.to_event(),
-            "raw": self.mandate_jwt,
+            "raw": {"mandate_jwt": self.mandate_jwt} if self.mandate_jwt else None,
         }
 
     async def adjudicate_raw(self, event: dict) -> PolicyDecision:

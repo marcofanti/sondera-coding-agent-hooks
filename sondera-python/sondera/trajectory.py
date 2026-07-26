@@ -88,6 +88,6 @@ class Trajectory:
                 "parent_id": None,
             },
             "event": observation.to_event(),
-            "raw": self.gate.mandate_jwt,
+            "raw": self.gate.raw_payload(),
         }
         return self.gate.adjudicate_raw(event)

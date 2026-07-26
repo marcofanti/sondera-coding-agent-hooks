@@ -37,59 +37,73 @@ def test_decision_escalate():
 
 
 # ─── Action helpers ───────────────────────────────────────────────────────────
+#
+# The harness deserializes events with adjacent tagging: the TrajectoryEvent
+# enum is {"category": <variant>, "payload": {...}} and the inner Action enum is
+# {"type": <variant>, "data": {...}}. `inner` unwraps both layers.
+
+def inner(ev: dict) -> tuple[str, dict]:
+    payload = ev["payload"]
+    return payload["type"], payload["data"]
+
 
 def test_shell_action_event_shape():
     a = Action.shell("git", "status")
     ev = a.to_event()
-    assert "Action" in ev
-    assert "ShellCommand" in ev["Action"]
-    assert ev["Action"]["ShellCommand"]["command"] == "git"
-    assert ev["Action"]["ShellCommand"]["args"] == ["status"]
+    assert ev["category"] == "Action"
+    variant, data = inner(ev)
+    assert variant == "ShellCommand"
+    # Args fold into the command string — the Rust struct has no args field,
+    # and guardrails must scan the full command line.
+    assert data["command"] == "git status"
+    assert data["call_id"].startswith("call-")
+
+
+def test_delete_file_action():
+    variant, data = inner(Action.delete_file("/tmp/old.pem").to_event())
+    assert variant == "FileOperation"
+    assert data["operation"] == "Delete"
+    assert data["path"] == "/tmp/old.pem"
 
 
 def test_read_file_action():
-    a = Action.read_file("/tmp/data.csv")
-    ev = a.to_event()
-    assert ev["Action"]["FileOperation"]["operation"] == "Read"
-    assert ev["Action"]["FileOperation"]["path"] == "/tmp/data.csv"
+    variant, data = inner(Action.read_file("/tmp/data.csv").to_event())
+    assert variant == "FileOperation"
+    assert data["operation"] == "Read"
+    assert data["path"] == "/tmp/data.csv"
 
 
 def test_write_file_action():
-    a = Action.write_file("/tmp/out.txt", "hello")
-    ev = a.to_event()
-    assert ev["Action"]["FileOperation"]["operation"] == "Write"
-    assert ev["Action"]["FileOperation"]["content"] == "hello"
+    variant, data = inner(Action.write_file("/tmp/out.txt", "hello").to_event())
+    assert data["operation"] == "Write"
+    assert data["content"] == "hello"
 
 
 def test_fetch_action():
-    a = Action.fetch("https://api.github.com/repos/foo")
-    ev = a.to_event()
-    assert ev["Action"]["WebFetch"]["prompt"] == "fetch"
+    _, data = inner(Action.fetch("https://api.github.com/repos/foo").to_event())
+    assert data["prompt"] == "fetch"
 
 
 def test_navigate_action():
-    a = Action.navigate("https://booking.com")
-    ev = a.to_event()
-    assert ev["Action"]["WebFetch"]["prompt"] == "navigate"
+    _, data = inner(Action.navigate("https://booking.com").to_event())
+    assert data["prompt"] == "navigate"
 
 
 def test_submit_form_action():
-    a = Action.submit_form("https://booking.com/checkout")
-    ev = a.to_event()
-    assert ev["Action"]["WebFetch"]["prompt"] == "submit_form"
+    _, data = inner(Action.submit_form("https://booking.com/checkout").to_event())
+    assert data["prompt"] == "submit_form"
 
 
 def test_send_email_action():
-    a = Action.send_email()
-    ev = a.to_event()
-    assert ev["Action"]["WebFetch"]["prompt"] == "send_email"
+    _, data = inner(Action.send_email().to_event())
+    assert data["prompt"] == "send_email"
 
 
 def test_tool_call_action():
-    a = Action.tool_call("gmail_send", to="alice@example.com", body="hi")
-    ev = a.to_event()
-    assert ev["Action"]["ToolCall"]["tool"] == "gmail_send"
-    assert ev["Action"]["ToolCall"]["arguments"]["to"] == "alice@example.com"
+    variant, data = inner(Action.tool_call("gmail_send", to="alice@example.com", body="hi").to_event())
+    assert variant == "ToolCall"
+    assert data["tool"] == "gmail_send"
+    assert data["arguments"]["to"] == "alice@example.com"
 
 
 # ─── PolicyGate.adjudicate_raw (mocked HTTP) ─────────────────────────────────
@@ -177,7 +191,11 @@ def test_mandate_jwt_forwarded():
 
     def callback(req):
         body = json.loads(req.body)
-        assert body.get("raw") == JWT, f"raw field missing or wrong: {body.get('raw')!r}"
+        # The mandate engine reads event.raw["mandate_jwt"] — the JWT must be
+        # nested under that key, not sent as a bare string.
+        assert body.get("raw") == {"mandate_jwt": JWT}, (
+            f"raw field missing or wrong: {body.get('raw')!r}"
+        )
         return (200, {}, json.dumps(adj_response("Allow")))
 
     resp_lib.add_callback(resp_lib.POST, f"{ADMIN_URL}/api/adjudicate", callback,
@@ -220,8 +238,8 @@ def test_trajectory_observe_event_shape():
 
     body = captured["body"]
     assert body["trajectory_id"] == "traj-obs-test"
-    assert "Observation" in body["event"]
-    assert "FileOperationResult" in body["event"]["Observation"]
+    assert body["event"]["category"] == "Observation"
+    assert body["event"]["payload"]["type"] == "FileOperationResult"
 
 
 @resp_lib.activate

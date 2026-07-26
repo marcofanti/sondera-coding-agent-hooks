@@ -197,9 +197,9 @@ async def test_async_trajectory_observe_shell_output():
     assert d.allow
     call_args = gate.adjudicate_raw.call_args[0][0]
     event_body = call_args["event"]
-    assert "Observation" in event_body
-    assert "ShellCommandOutput" in event_body["Observation"]
-    assert event_body["Observation"]["ShellCommandOutput"]["stdout"] == "total 0\n"
+    assert event_body["category"] == "Observation"
+    assert event_body["payload"]["type"] == "ShellCommandOutput"
+    assert event_body["payload"]["data"]["stdout"] == "total 0\n"
 
 
 @pytest.mark.asyncio
@@ -216,9 +216,9 @@ async def test_async_trajectory_observe_prompt():
 
     assert d.allow
     event_body = gate.adjudicate_raw.call_args[0][0]["event"]
-    assert "Observation" in event_body
-    assert "Prompt" in event_body["Observation"]
-    assert event_body["Observation"]["Prompt"]["content"] == "summarise the file"
+    assert event_body["category"] == "Observation"
+    assert event_body["payload"]["type"] == "Prompt"
+    assert event_body["payload"]["data"]["content"] == "summarise the file"
 
 
 @pytest.mark.asyncio
@@ -235,8 +235,8 @@ async def test_async_trajectory_observe_think():
 
     assert d.allow
     event_body = gate.adjudicate_raw.call_args[0][0]["event"]
-    assert "Observation" in event_body
-    assert "Think" in event_body["Observation"]
+    assert event_body["category"] == "Observation"
+    assert event_body["payload"]["type"] == "Think"
 
 
 @pytest.mark.asyncio

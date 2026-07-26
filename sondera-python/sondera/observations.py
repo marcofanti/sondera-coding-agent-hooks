@@ -3,15 +3,20 @@
 Observations are sent AFTER a tool executes so the harness can classify
 output sensitivity and propagate taints onto the trajectory.
 
-Each helper returns a dict matching the Rust `TrajectoryEvent::Observation(…)`
-enum variants.
+Like actions, the harness `TrajectoryEvent` enum is adjacently tagged as
+`{"category": "Observation", "payload": {"type": <variant>, "data": {...}}}`.
+The `data` field names match the Rust structs exactly.
 """
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
+
+
+def _obs_event(variant: str, data: dict) -> dict:
+    return {"category": "Observation", "payload": {"type": variant, "data": data}}
 
 
 @dataclass
@@ -22,16 +27,15 @@ class ShellOutputObservation:
     exit_code: int = 0
 
     def to_event(self) -> dict:
-        return {
-            "Observation": {
-                "ShellCommandOutput": {
-                    "call_id": self.call_id,
-                    "stdout": self.stdout,
-                    "stderr": self.stderr,
-                    "exit_code": self.exit_code,
-                }
-            }
-        }
+        return _obs_event(
+            "ShellCommandOutput",
+            {
+                "call_id": self.call_id,
+                "exit_code": self.exit_code,
+                "stdout": self.stdout,
+                "stderr": self.stderr,
+            },
+        )
 
 
 @dataclass
@@ -41,33 +45,34 @@ class FileResultObservation:
     error: Optional[str] = None
 
     def to_event(self) -> dict:
-        return {
-            "Observation": {
-                "FileOperationResult": {
-                    "call_id": self.call_id,
-                    "content": self.content,
-                    "error": self.error,
-                }
-            }
-        }
+        return _obs_event(
+            "FileOperationResult",
+            {
+                "call_id": self.call_id,
+                "success": self.error is None,
+                "content": self.content,
+                "error": self.error,
+            },
+        )
 
 
 @dataclass
 class WebFetchOutputObservation:
     call_id: str
-    body: str = ""
-    status_code: int = 200
+    url: str = ""
+    result: str = ""
+    code: int = 200
 
     def to_event(self) -> dict:
-        return {
-            "Observation": {
-                "WebFetchOutput": {
-                    "call_id": self.call_id,
-                    "body": self.body,
-                    "status_code": self.status_code,
-                }
-            }
-        }
+        return _obs_event(
+            "WebFetchOutput",
+            {
+                "call_id": self.call_id,
+                "url": self.url,
+                "code": self.code,
+                "result": self.result,
+            },
+        )
 
 
 @dataclass
@@ -77,31 +82,27 @@ class ToolOutputObservation:
     error: Optional[str] = None
 
     def to_event(self) -> dict:
-        return {
-            "Observation": {
-                "ToolOutput": {
-                    "call_id": self.call_id,
-                    "output": self.output,
-                    "error": self.error,
-                }
-            }
-        }
+        return _obs_event(
+            "ToolOutput",
+            {
+                "call_id": self.call_id,
+                "success": self.error is None,
+                "output": self.output,
+                "error": self.error,
+            },
+        )
 
 
 @dataclass
 class PromptObservation:
     content: str
-    role: str = "user"
+    role: str = "User"
 
     def to_event(self) -> dict:
-        return {
-            "Observation": {
-                "Prompt": {
-                    "content": self.content,
-                    "role": self.role,
-                }
-            }
-        }
+        return _obs_event(
+            "Prompt",
+            {"content": self.content, "role": self.role},
+        )
 
 
 @dataclass
@@ -109,13 +110,7 @@ class ThinkObservation:
     thought: str
 
     def to_event(self) -> dict:
-        return {
-            "Observation": {
-                "Think": {
-                    "thought": self.thought,
-                }
-            }
-        }
+        return _obs_event("Think", {"thought": self.thought})
 
 
 class Observation:
@@ -149,14 +144,16 @@ class Observation:
 
     @staticmethod
     def web_fetch_output(
-        body: str,
-        status_code: int = 200,
+        result: str,
+        url: str = "",
+        code: int = 200,
         call_id: Optional[str] = None,
     ) -> WebFetchOutputObservation:
         return WebFetchOutputObservation(
             call_id=call_id or str(uuid.uuid4()),
-            body=body,
-            status_code=status_code,
+            url=url,
+            result=result,
+            code=code,
         )
 
     @staticmethod
@@ -172,7 +169,7 @@ class Observation:
         )
 
     @staticmethod
-    def prompt(content: str, role: str = "user") -> PromptObservation:
+    def prompt(content: str, role: str = "User") -> PromptObservation:
         return PromptObservation(content=content, role=role)
 
     @staticmethod

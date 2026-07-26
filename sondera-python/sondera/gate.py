@@ -108,6 +108,12 @@ class PolicyGate:
         self.default_agent_id = default_agent_id
         self.default_provider_id = default_provider_id
 
+    def raw_payload(self) -> Optional[dict]:
+        """Event `raw` field: the mandate engine reads `raw["mandate_jwt"]`."""
+        if self.mandate_jwt is None:
+            return None
+        return {"mandate_jwt": self.mandate_jwt}
+
     def trajectory(
         self,
         agent_id: Optional[str] = None,
@@ -147,7 +153,7 @@ class PolicyGate:
                 "parent_id": None,
             },
             "event": action.to_event(),
-            "raw": self.mandate_jwt,
+            "raw": self.raw_payload(),
         }
 
     def adjudicate_raw(self, event: dict) -> PolicyDecision:

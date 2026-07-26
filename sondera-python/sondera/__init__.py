@@ -18,7 +18,15 @@ Quick start::
 
 from .gate import PolicyGate, PolicyDecision, EscalationHandle
 from .trajectory import Trajectory
-from .actions import Action, ShellAction, FileReadAction, FileWriteAction, WebFetchAction, ToolCallAction
+from .actions import (
+    Action,
+    ShellAction,
+    FileReadAction,
+    FileWriteAction,
+    FileDeleteAction,
+    WebFetchAction,
+    ToolCallAction,
+)
 from .observations import (
     Observation,
     ShellOutputObservation,
@@ -38,6 +46,7 @@ __all__ = [
     "ShellAction",
     "FileReadAction",
     "FileWriteAction",
+    "FileDeleteAction",
     "WebFetchAction",
     "ToolCallAction",
     "Observation",
