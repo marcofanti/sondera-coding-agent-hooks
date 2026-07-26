@@ -340,7 +340,7 @@ impl PolicyEngine for CedarlingPolicyEngine {
 
 /// Extract the text content to run through the guardrails for a given event.
 /// Returns `None` for Control events (no content to scan).
-fn extract_scannable(event: &Event) -> Option<String> {
+pub(crate) fn extract_scannable(event: &Event) -> Option<String> {
     match &event.event {
         TrajectoryEvent::Action(Action::ShellCommand(sc)) => Some(sc.command.clone()),
         TrajectoryEvent::Action(Action::WebFetch(wf)) => Some(format!("{} {}", wf.url, wf.prompt)),

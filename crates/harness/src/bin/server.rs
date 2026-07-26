@@ -7,8 +7,9 @@ use anyhow::{Context as _, Result};
 use axum::serve;
 use clap::{Parser, ValueEnum};
 use sondera_harness::{
-    AllowAllPolicyEngine, CedarPolicyHarness, CedarlingPolicyEngine, CedarlingPolicyHarness,
-    MandatePolicyEngine, MandatePolicyHarness, PolicyHarness,
+    AgentMemoryConfig, AllowAllPolicyEngine, CedarPolicyHarness, CedarlingPolicyEngine,
+    CedarlingPolicyHarness, InspectMode, InspectPolicyEngine, MandatePolicyEngine,
+    MandatePolicyHarness, PolicyHarness,
     escalation::{
         EscalationStore,
         api::{AdminState, router, spawn_ttl_sweeper},
@@ -30,6 +31,18 @@ enum PolicyEngineKind {
     Mandate,
     /// Persist events and allow every non-control event without policy checks.
     AllowAll,
+    /// Evaluate Cedar policies but override the final decision (see --inspect-mode).
+    /// Emits rich OTel spans and optionally forwards events to agentmemory.
+    Inspect,
+}
+
+#[derive(Clone, Debug, ValueEnum, Default)]
+enum InspectModeArg {
+    /// Always allow — audit/shadow mode: log what Cedar would decide, pass through.
+    #[default]
+    Allow,
+    /// Always escalate — review mode: every action awaits operator approval.
+    Prompt,
 }
 
 #[derive(Parser, Debug)]
@@ -88,6 +101,19 @@ struct Args {
     /// Enable OpenTelemetry metric export.
     #[arg(long)]
     otel_metrics: bool,
+
+    /// Inspect mode: allow (audit/shadow) or prompt (escalate all). Only used with --policy-engine inspect.
+    #[arg(long, value_enum, default_value_t = InspectModeArg::Allow)]
+    inspect_mode: InspectModeArg,
+
+    /// agentmemory REST API base URL for inspect mode (e.g. http://localhost:3111).
+    /// When set, every inspected event is forwarded fire-and-forget to agentmemory.
+    #[arg(long)]
+    agentmemory_url: Option<String>,
+
+    /// Bearer token for agentmemory authentication. Falls back to AGENTMEMORY_SECRET env var.
+    #[arg(long)]
+    agentmemory_secret: Option<String>,
 }
 
 #[tokio::main]
@@ -182,6 +208,35 @@ async fn main() -> Result<()> {
             tracing::warn!("Starting harness with allow-all policy engine");
             let harness = PolicyHarness::from_default_storage(AllowAllPolicyEngine).await?;
             tracing::info!("Starting allow-all harness server on {:?}", socket_path);
+            rpc::serve(harness, &socket_path).await?;
+        }
+        PolicyEngineKind::Inspect => {
+            let mode = match args.inspect_mode {
+                InspectModeArg::Allow => InspectMode::Allow,
+                InspectModeArg::Prompt => InspectMode::Prompt,
+            };
+            let secret = args
+                .agentmemory_secret
+                .or_else(|| std::env::var("AGENTMEMORY_SECRET").ok());
+            let agentmemory = args.agentmemory_url.map(|url| AgentMemoryConfig {
+                url,
+                secret,
+            });
+            tracing::info!(
+                "Loading Jans:: policies from {:?} for inspect mode ({:?})",
+                args.policy_path,
+                mode
+            );
+            let inner = CedarlingPolicyEngine::from_policy_dir(&args.policy_path)?;
+            let engine = InspectPolicyEngine::new(inner, mode, agentmemory);
+            let mut harness = PolicyHarness::from_default_storage(engine).await?;
+            if let Some(esc) = escalation {
+                harness = harness.with_escalation(esc, esc_ttl);
+            }
+            tracing::info!(
+                "Starting inspect harness server on {:?}",
+                socket_path
+            );
             rpc::serve(harness, &socket_path).await?;
         }
     }

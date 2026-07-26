@@ -27,6 +27,7 @@ mod cedar;
 pub mod cedarling;
 pub mod escalation;
 mod harness;
+pub mod inspect;
 pub mod mandate;
 pub mod observability;
 mod policy_engine;
@@ -43,6 +44,7 @@ pub use cedar::CedarPolicyEngine;
 pub use cedar::entity::{EntityBuilder, Trajectory, euid, json_to_restricted_expr};
 pub use cedarling::CedarlingPolicyEngine;
 pub use harness::Harness;
+pub use inspect::{AgentMemoryConfig, InspectMode, InspectPolicyEngine};
 pub use mandate::MandatePolicyEngine;
 pub use policy_engine::{AllowAllPolicyEngine, PolicyEngine, PolicyEvaluation, SyncAuthorize};
 pub use policy_harness::{
