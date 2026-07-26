@@ -37,3 +37,5 @@ __pycache__/
 examples/*/.venv/
 .mcp.json
 .rag-test-agent/
+examples/scratch_space/
+examples/read_write_shell_agent/scratch_space/
