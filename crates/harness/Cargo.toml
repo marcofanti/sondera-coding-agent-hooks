@@ -15,6 +15,14 @@ crate-type = ["rlib"]
 name = "sondera-harness-server"
 path = "src/bin/server.rs"
 
+[lints.rust]
+# The debug binary statically links cedar/yara-x/libsql, so its __eh_frame
+# exceeds the 16MB the macOS linker can encode in the compact unwind table. The
+# linker falls back to DWARF unwinding, which only affects panic-unwind
+# performance (irrelevant here) — not correctness. The genuine fix (panic=abort)
+# would break the workspace test suite on stable, so silence the benign note.
+linker_messages = "allow"
+
 [dependencies]
 cedar-policy = { version = "4" }
 serde = { version = "1.0", features = ["derive"] }
