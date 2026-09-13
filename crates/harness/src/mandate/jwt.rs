@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
@@ -54,8 +54,7 @@ pub fn generate_keypair() -> (SigningKey, VerifyingKey) {
 /// The signature covers the exact bytes of the base64url-encoded payload,
 /// so any modification to either part invalidates the token.
 pub fn sign_mandate(signing_key: &SigningKey, claims: &MandateClaims) -> Result<String> {
-    let payload_json =
-        serde_json::to_vec(claims).context("Failed to serialize mandate claims")?;
+    let payload_json = serde_json::to_vec(claims).context("Failed to serialize mandate claims")?;
     let payload_b64 = URL_SAFE_NO_PAD.encode(&payload_json);
     let sig = signing_key.sign(payload_b64.as_bytes());
     let sig_b64 = URL_SAFE_NO_PAD.encode(sig.to_bytes());

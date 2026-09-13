@@ -22,9 +22,9 @@ pub enum EscalationStatus {
 impl EscalationStatus {
     fn as_str(&self) -> &'static str {
         match self {
-            Self::Pending  => "pending",
+            Self::Pending => "pending",
             Self::Approved => "approved",
-            Self::Denied   => "denied",
+            Self::Denied => "denied",
             Self::TimedOut => "timed_out",
         }
     }
@@ -40,9 +40,9 @@ impl std::str::FromStr for EscalationStatus {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self> {
         match s {
-            "pending"   => Ok(Self::Pending),
-            "approved"  => Ok(Self::Approved),
-            "denied"    => Ok(Self::Denied),
+            "pending" => Ok(Self::Pending),
+            "approved" => Ok(Self::Approved),
+            "denied" => Ok(Self::Denied),
             "timed_out" => Ok(Self::TimedOut),
             other => Err(anyhow::anyhow!("Unknown escalation status: {other}")),
         }
@@ -179,12 +179,16 @@ impl EscalationStore {
 
     pub async fn list(&self, status: Option<EscalationStatus>) -> Result<Vec<EscalationRecord>> {
         let sql = match &status {
-            Some(_) => "SELECT id, trajectory_id, agent_id, event_json, policy_ids, status,
+            Some(_) => {
+                "SELECT id, trajectory_id, agent_id, event_json, policy_ids, status,
                                created_at, expires_at, decided_at, decided_by
-                        FROM escalations WHERE status = ?1 ORDER BY created_at DESC",
-            None => "SELECT id, trajectory_id, agent_id, event_json, policy_ids, status,
+                        FROM escalations WHERE status = ?1 ORDER BY created_at DESC"
+            }
+            None => {
+                "SELECT id, trajectory_id, agent_id, event_json, policy_ids, status,
                             created_at, expires_at, decided_at, decided_by
-                     FROM escalations ORDER BY created_at DESC",
+                     FROM escalations ORDER BY created_at DESC"
+            }
         };
 
         let mut rows = if let Some(ref s) = status {
@@ -202,11 +206,13 @@ impl EscalationStore {
     }
 
     pub async fn approve(&self, id: &str, decided_by: &str) -> Result<bool> {
-        self.set_decision(id, EscalationStatus::Approved, decided_by).await
+        self.set_decision(id, EscalationStatus::Approved, decided_by)
+            .await
     }
 
     pub async fn deny(&self, id: &str, decided_by: &str) -> Result<bool> {
-        self.set_decision(id, EscalationStatus::Denied, decided_by).await
+        self.set_decision(id, EscalationStatus::Denied, decided_by)
+            .await
     }
 
     async fn set_decision(
@@ -257,7 +263,9 @@ pub async fn notify_slack(
     record: &EscalationRecord,
     admin_port: u16,
 ) -> Result<()> {
-    let Some(url) = webhook_url else { return Ok(()) };
+    let Some(url) = webhook_url else {
+        return Ok(());
+    };
     slack::post(url, record, admin_port).await
 }
 
@@ -276,15 +284,15 @@ fn row_to_record(row: &turso::Row) -> Result<EscalationRecord> {
     let expires_at: String = row.get(7).context("expires_at")?;
     let decided_at: Option<String> = row.get(8).context("decided_at")?;
     Ok(EscalationRecord {
-        id:            row.get(0).context("id")?,
+        id: row.get(0).context("id")?,
         trajectory_id: row.get(1).context("trajectory_id")?,
-        agent_id:      row.get(2).context("agent_id")?,
-        event_json:    row.get(3).context("event_json")?,
-        policy_ids:    row.get(4).context("policy_ids")?,
-        status:        status_str.parse()?,
-        created_at:    created_at.parse().unwrap_or(0),
-        expires_at:    expires_at.parse().unwrap_or(0),
-        decided_at:    decided_at.and_then(|s| s.parse().ok()),
-        decided_by:    row.get(9).context("decided_by")?,
+        agent_id: row.get(2).context("agent_id")?,
+        event_json: row.get(3).context("event_json")?,
+        policy_ids: row.get(4).context("policy_ids")?,
+        status: status_str.parse()?,
+        created_at: created_at.parse().unwrap_or(0),
+        expires_at: expires_at.parse().unwrap_or(0),
+        decided_at: decided_at.and_then(|s| s.parse().ok()),
+        decided_by: row.get(9).context("decided_by")?,
     })
 }

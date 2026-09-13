@@ -3,7 +3,9 @@
 //! Tests Ed25519 key generation, mandate JWT sign/verify round-trip, and
 //! rejection of tampered or expired tokens.
 
-use sondera_harness::mandate::jwt::{MandateClaims, generate_keypair, sign_mandate, verify_mandate}; // → RED
+use sondera_harness::mandate::jwt::{
+    MandateClaims, generate_keypair, sign_mandate, verify_mandate,
+}; // → RED
 
 // ─── Key generation ──────────────────────────────────────────────────────────
 
@@ -39,7 +41,8 @@ fn sign_and_verify_round_trip() {
                 action in [Jans::Action::"read_file", Jans::Action::"exec_command"],
                 resource
             );
-        "#.to_string(),
+        "#
+        .to_string(),
     };
 
     let token = sign_mandate(&signing_key, &original).expect("sign must succeed");
@@ -87,7 +90,10 @@ fn wrong_key_is_rejected() {
 
     let token = sign_mandate(&signing_key, &claims).expect("sign");
     let result = verify_mandate(&token, &wrong_verifying_key);
-    assert!(result.is_err(), "token signed by different key must be rejected");
+    assert!(
+        result.is_err(),
+        "token signed by different key must be rejected"
+    );
 }
 
 // ─── Expired token rejection ─────────────────────────────────────────────────

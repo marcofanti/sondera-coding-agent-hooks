@@ -4,11 +4,11 @@
 //! Verifies that when browser.cedar's @decision("escalate") forbid fires for
 //! submit_form, an EscalationStore record is automatically created.
 
-use sondera_harness::{
-    Action, Actor, ActorType, Agent, Causality, CedarlingPolicyEngine, CedarlingPolicyHarness,
-    AdminState, Decision, Event, Harness, TrajectoryEvent, WebFetch,
-};
 use sondera_harness::escalation::{EscalationStatus, EscalationStore};
+use sondera_harness::{
+    Action, Actor, ActorType, AdminState, Agent, Causality, CedarlingPolicyEngine,
+    CedarlingPolicyHarness, Decision, Event, Harness, TrajectoryEvent, WebFetch,
+};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -16,8 +16,7 @@ const POLICIES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../policies"
 
 async fn harness_with_escalation() -> (CedarlingPolicyHarness, Arc<AdminState>, TempDir) {
     let tmpdir = TempDir::new().expect("tmpdir");
-    let engine = CedarlingPolicyEngine::from_policy_dir(POLICIES_DIR)
-        .expect("policies must load");
+    let engine = CedarlingPolicyEngine::from_policy_dir(POLICIES_DIR).expect("policies must load");
     let harness = CedarlingPolicyHarness::from_isolated_storage(engine, tmpdir.path())
         .await
         .expect("harness must init");
@@ -31,21 +30,21 @@ async fn harness_with_escalation() -> (CedarlingPolicyHarness, Arc<AdminState>, 
 fn submit_form_event(agent_id: &str) -> Event {
     let traj_id = uuid::Uuid::new_v4().to_string();
     Event {
-        event_id:      uuid::Uuid::new_v4().to_string(),
+        event_id: uuid::Uuid::new_v4().to_string(),
         trajectory_id: traj_id.clone(),
-        timestamp:     chrono::Utc::now(),
+        timestamp: chrono::Utc::now(),
         agent: Agent {
-            id:          agent_id.to_string(),
+            id: agent_id.to_string(),
             provider_id: "playwright".to_string(),
         },
         actor: Actor {
-            id:         agent_id.to_string(),
+            id: agent_id.to_string(),
             actor_type: ActorType::Agent,
         },
         causality: Causality {
             correlation_id: traj_id,
-            causation_id:   None,
-            parent_id:      None,
+            causation_id: None,
+            parent_id: None,
         },
         // submit_form is a WebFetch in the current type system; the Cedar action
         // is what matters — we use a ToolCall to represent the submit_form action.
@@ -66,30 +65,48 @@ async fn escalation_record_created_on_escalate() {
     // submit_form → @decision("escalate") forbid in browser.cedar.
     // The harness should auto-create an EscalationStore record.
     let event = submit_form_event("playwright-agent");
-    let adjudicated = harness.adjudicate(event).await.expect("adjudicate must succeed");
+    let adjudicated = harness
+        .adjudicate(event)
+        .await
+        .expect("adjudicate must succeed");
 
     // Verify the harness-level decision is Escalate.
-    assert_eq!(adjudicated.decision, Decision::Escalate,
-        "submit_form must return Escalate at the harness level");
+    assert_eq!(
+        adjudicated.decision,
+        Decision::Escalate,
+        "submit_form must return Escalate at the harness level"
+    );
 
     // Verify the escalation_id is surfaced in the Adjudicated response.
-    let esc_id = adjudicated.escalation_id.expect("escalation_id must be set on Escalate decision");
+    let esc_id = adjudicated
+        .escalation_id
+        .expect("escalation_id must be set on Escalate decision");
     assert!(!esc_id.is_empty(), "escalation_id must be non-empty");
 
     // Verify the EscalationStore received a record with the same ID.
-    let pending = state.store.list(Some(EscalationStatus::Pending))
+    let pending = state
+        .store
+        .list(Some(EscalationStatus::Pending))
         .await
         .expect("list must succeed");
-    assert_eq!(pending.len(), 1, "exactly one escalation record must be created");
+    assert_eq!(
+        pending.len(),
+        1,
+        "exactly one escalation record must be created"
+    );
     assert_eq!(pending[0].agent_id, "playwright-agent");
-    assert_eq!(pending[0].id, esc_id, "escalation_id in Adjudicated must match the store record");
+    assert_eq!(
+        pending[0].id, esc_id,
+        "escalation_id in Adjudicated must match the store record"
+    );
 }
 
 #[tokio::test]
 async fn escalation_id_cleared_after_operator_approval() {
     let (harness, state, _tmp) = harness_with_escalation().await;
 
-    let adjudicated = harness.adjudicate(submit_form_event("playwright-agent"))
+    let adjudicated = harness
+        .adjudicate(submit_form_event("playwright-agent"))
         .await
         .expect("adjudicate must succeed");
     assert_eq!(adjudicated.decision, Decision::Escalate);
@@ -97,9 +114,18 @@ async fn escalation_id_cleared_after_operator_approval() {
     let esc_id = adjudicated.escalation_id.unwrap();
 
     // Operator approves → status transitions to Approved.
-    state.store.approve(&esc_id, "operator").await.expect("approve must succeed");
+    state
+        .store
+        .approve(&esc_id, "operator")
+        .await
+        .expect("approve must succeed");
 
-    let record = state.store.get(&esc_id).await.expect("get must succeed").unwrap();
+    let record = state
+        .store
+        .get(&esc_id)
+        .await
+        .expect("get must succeed")
+        .unwrap();
     assert_eq!(record.status, EscalationStatus::Approved);
 }
 
@@ -110,15 +136,21 @@ async fn no_escalation_record_on_allow() {
     // navigate to a clean domain is Allow — no escalation record.
     let traj_id = uuid::Uuid::new_v4().to_string();
     let event = Event {
-        event_id:      uuid::Uuid::new_v4().to_string(),
+        event_id: uuid::Uuid::new_v4().to_string(),
         trajectory_id: traj_id.clone(),
-        timestamp:     chrono::Utc::now(),
-        agent: Agent { id: "playwright-agent".to_string(), provider_id: "playwright".to_string() },
-        actor: Actor { id: "playwright-agent".to_string(), actor_type: ActorType::Agent },
+        timestamp: chrono::Utc::now(),
+        agent: Agent {
+            id: "playwright-agent".to_string(),
+            provider_id: "playwright".to_string(),
+        },
+        actor: Actor {
+            id: "playwright-agent".to_string(),
+            actor_type: ActorType::Agent,
+        },
         causality: Causality {
             correlation_id: traj_id,
-            causation_id:   None,
-            parent_id:      None,
+            causation_id: None,
+            parent_id: None,
         },
         event: TrajectoryEvent::Action(Action::WebFetch(WebFetch::new(
             "https://booking.com/hotels",
@@ -127,7 +159,10 @@ async fn no_escalation_record_on_allow() {
         raw: None,
     };
 
-    let adjudicated = harness.adjudicate(event).await.expect("adjudicate must succeed");
+    let adjudicated = harness
+        .adjudicate(event)
+        .await
+        .expect("adjudicate must succeed");
     // navigate is Allow — no escalation record should be created.
     let all = state.store.list(None).await.expect("list");
     assert!(

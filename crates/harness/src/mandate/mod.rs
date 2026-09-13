@@ -96,9 +96,7 @@ impl<E: PolicyEngine + SyncAuthorize> MandatePolicyEngine<E> {
 
         // Cedar has implicit default-deny: if no permit fires, the result is Deny.
         // We just evaluate the mandate policy set directly.
-        let mandate_response =
-            self.authorizer
-                .is_authorized(&req, &mandate_ps, &entities);
+        let mandate_response = self.authorizer.is_authorized(&req, &mandate_ps, &entities);
         mandate_response.decision()
     }
 }
@@ -157,8 +155,7 @@ impl<E: PolicyEngine + Send + Sync> PolicyEngine for MandatePolicyEngine<E> {
             Ok(ps) => ps,
             Err(e) => {
                 return Ok(PolicyEvaluation::new(
-                    Adjudicated::deny()
-                        .with_reason(format!("Mandate policy parse error: {e}")),
+                    Adjudicated::deny().with_reason(format!("Mandate policy parse error: {e}")),
                     serde_json::json!({
                         "engine": self.name(),
                         "event_id": event.event_id,

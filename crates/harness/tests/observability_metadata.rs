@@ -1,7 +1,7 @@
 use sondera_harness::observability::{
-    AdjudicationMetricLabels, EventTelemetry, HTTP_ADJUDICATE_ROUTE,
-    HTTP_APPROVE_ESCALATION_ROUTE, HTTP_DENY_ESCALATION_ROUTE, HTTP_GET_ESCALATION_ROUTE,
-    HTTP_LIST_ESCALATIONS_ROUTE, HTTP_STREAM_ESCALATIONS_ROUTE,
+    AdjudicationMetricLabels, EventTelemetry, HTTP_ADJUDICATE_ROUTE, HTTP_APPROVE_ESCALATION_ROUTE,
+    HTTP_DENY_ESCALATION_ROUTE, HTTP_GET_ESCALATION_ROUTE, HTTP_LIST_ESCALATIONS_ROUTE,
+    HTTP_STREAM_ESCALATIONS_ROUTE,
 };
 use sondera_harness::{
     Action, Adjudicated, Agent, Annotation, Decision, Event, FileOperation, ShellCommand, ToolCall,
@@ -113,7 +113,10 @@ fn http_route_telemetry_uses_stable_route_templates() {
     assert_eq!(HTTP_ADJUDICATE_ROUTE.method, "POST");
     assert_eq!(HTTP_ADJUDICATE_ROUTE.route, "/api/adjudicate");
     assert_eq!(HTTP_LIST_ESCALATIONS_ROUTE.route, "/api/escalations");
-    assert_eq!(HTTP_STREAM_ESCALATIONS_ROUTE.route, "/api/escalations/stream");
+    assert_eq!(
+        HTTP_STREAM_ESCALATIONS_ROUTE.route,
+        "/api/escalations/stream"
+    );
     assert_eq!(HTTP_GET_ESCALATION_ROUTE.route, "/api/escalations/{id}");
     assert_eq!(
         HTTP_APPROVE_ESCALATION_ROUTE.route,

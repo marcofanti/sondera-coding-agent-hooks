@@ -4,38 +4,40 @@
 //! using an in-memory Turso database so they run without touching disk.
 
 use sondera_harness::{
-    Agent, Actor, ActorType, Causality, Control, Event, Started, TrajectoryEvent,
+    Actor, ActorType, Agent, Causality, Control, Event, Started, TrajectoryEvent,
     escalation::{EscalationStatus, EscalationStore},
 };
 
 fn dummy_event(id: &str) -> Event {
     Event {
-        event_id:      id.to_string(),
+        event_id: id.to_string(),
         trajectory_id: "traj-1".to_string(),
-        timestamp:     chrono::Utc::now(),
+        timestamp: chrono::Utc::now(),
         agent: Agent {
-            id:          "agent-1".to_string(),
+            id: "agent-1".to_string(),
             provider_id: "cursor".to_string(),
         },
         actor: Actor {
-            id:         "agent-1".to_string(),
+            id: "agent-1".to_string(),
             actor_type: ActorType::Agent,
         },
         causality: Causality {
             correlation_id: id.to_string(),
-            causation_id:   None,
-            parent_id:      None,
+            causation_id: None,
+            parent_id: None,
         },
         event: TrajectoryEvent::Control(Control::Started(Started {
             agent_id: "agent-1".to_string(),
-            task:     None,
+            task: None,
         })),
-        raw:   None,
+        raw: None,
     }
 }
 
 async fn store() -> EscalationStore {
-    EscalationStore::open_in_memory().await.expect("in-memory store")
+    EscalationStore::open_in_memory()
+        .await
+        .expect("in-memory store")
 }
 
 // ─── create ──────────────────────────────────────────────────────────────────
@@ -44,7 +46,8 @@ async fn store() -> EscalationStore {
 async fn create_returns_id() {
     let s = store().await;
     let ev = dummy_event("evt-1");
-    let id = s.create(&ev, &["escalate-send-email-default".to_string()], 120)
+    let id = s
+        .create(&ev, &["escalate-send-email-default".to_string()], 120)
         .await
         .expect("create must succeed");
     assert!(!id.is_empty(), "id must be non-empty");
@@ -75,8 +78,12 @@ async fn get_unknown_id_returns_none() {
 #[tokio::test]
 async fn list_all_returns_all_records() {
     let s = store().await;
-    s.create(&dummy_event("e1"), &[], 120).await.expect("create");
-    s.create(&dummy_event("e2"), &[], 120).await.expect("create");
+    s.create(&dummy_event("e1"), &[], 120)
+        .await
+        .expect("create");
+    s.create(&dummy_event("e2"), &[], 120)
+        .await
+        .expect("create");
     let all = s.list(None).await.expect("list");
     assert_eq!(all.len(), 2);
 }
@@ -88,7 +95,10 @@ async fn list_pending_filters_correctly() {
     let _id2 = s.create(&dummy_event("e4"), &[], 120).await.expect("c2");
     s.approve(&id1, "operator").await.expect("approve");
 
-    let pending = s.list(Some(EscalationStatus::Pending)).await.expect("list pending");
+    let pending = s
+        .list(Some(EscalationStatus::Pending))
+        .await
+        .expect("list pending");
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].status, EscalationStatus::Pending);
 }
@@ -98,7 +108,10 @@ async fn list_pending_filters_correctly() {
 #[tokio::test]
 async fn approve_transitions_to_approved() {
     let s = store().await;
-    let id = s.create(&dummy_event("e5"), &[], 120).await.expect("create");
+    let id = s
+        .create(&dummy_event("e5"), &[], 120)
+        .await
+        .expect("create");
     let changed = s.approve(&id, "marco").await.expect("approve");
     assert!(changed, "approve must return true");
 
@@ -111,7 +124,10 @@ async fn approve_transitions_to_approved() {
 #[tokio::test]
 async fn approve_already_approved_returns_false() {
     let s = store().await;
-    let id = s.create(&dummy_event("e6"), &[], 120).await.expect("create");
+    let id = s
+        .create(&dummy_event("e6"), &[], 120)
+        .await
+        .expect("create");
     s.approve(&id, "op").await.expect("first approve");
     let second = s.approve(&id, "op").await.expect("second approve");
     assert!(!second, "double-approve must return false");
@@ -122,7 +138,10 @@ async fn approve_already_approved_returns_false() {
 #[tokio::test]
 async fn deny_transitions_to_denied() {
     let s = store().await;
-    let id = s.create(&dummy_event("e7"), &[], 120).await.expect("create");
+    let id = s
+        .create(&dummy_event("e7"), &[], 120)
+        .await
+        .expect("create");
     let changed = s.deny(&id, "security-team").await.expect("deny");
     assert!(changed);
 
@@ -147,7 +166,10 @@ async fn expire_stale_marks_timed_out() {
 #[tokio::test]
 async fn expire_stale_leaves_future_records_untouched() {
     let s = store().await;
-    let id = s.create(&dummy_event("e9"), &[], 9999).await.expect("create");
+    let id = s
+        .create(&dummy_event("e9"), &[], 9999)
+        .await
+        .expect("create");
     let expired = s.expire_stale().await.expect("expire");
     assert_eq!(expired, 0);
 

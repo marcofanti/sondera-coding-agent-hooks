@@ -7,9 +7,8 @@
 //! The LLM classifiers fall back to safe defaults when unavailable.
 
 use sondera_harness::{
-    Action, Actor, ActorType, Agent, Causality, CedarlingPolicyEngine,
-    CedarlingPolicyHarness, Control, Decision, Event, Harness, ShellCommand,
-    Started, TrajectoryEvent,
+    Action, Actor, ActorType, Agent, Causality, CedarlingPolicyEngine, CedarlingPolicyHarness,
+    Control, Decision, Event, Harness, ShellCommand, Started, TrajectoryEvent,
 };
 use tempfile::TempDir;
 
@@ -26,11 +25,17 @@ async fn harness() -> (CedarlingPolicyHarness, TempDir) {
 
 fn start_event(agent_id: &str, traj_id: &str) -> Event {
     Event {
-        event_id:      uuid::Uuid::new_v4().to_string(),
+        event_id: uuid::Uuid::new_v4().to_string(),
         trajectory_id: traj_id.to_string(),
-        timestamp:     chrono::Utc::now(),
-        agent: Agent { id: agent_id.to_string(), provider_id: "test".to_string() },
-        actor: Actor { id: agent_id.to_string(), actor_type: ActorType::Agent },
+        timestamp: chrono::Utc::now(),
+        agent: Agent {
+            id: agent_id.to_string(),
+            provider_id: "test".to_string(),
+        },
+        actor: Actor {
+            id: agent_id.to_string(),
+            actor_type: ActorType::Agent,
+        },
         causality: Causality {
             correlation_id: traj_id.to_string(),
             causation_id: None,
@@ -43,11 +48,17 @@ fn start_event(agent_id: &str, traj_id: &str) -> Event {
 
 fn shell_event_no_raw(agent_id: &str, traj_id: &str, cmd: &str) -> Event {
     Event {
-        event_id:      uuid::Uuid::new_v4().to_string(),
+        event_id: uuid::Uuid::new_v4().to_string(),
         trajectory_id: traj_id.to_string(),
-        timestamp:     chrono::Utc::now(),
-        agent: Agent { id: agent_id.to_string(), provider_id: "test".to_string() },
-        actor: Actor { id: agent_id.to_string(), actor_type: ActorType::Agent },
+        timestamp: chrono::Utc::now(),
+        agent: Agent {
+            id: agent_id.to_string(),
+            provider_id: "test".to_string(),
+        },
+        actor: Actor {
+            id: agent_id.to_string(),
+            actor_type: ActorType::Agent,
+        },
         causality: Causality {
             correlation_id: traj_id.to_string(),
             causation_id: None,
@@ -77,7 +88,9 @@ async fn guardrails_yara_exfiltration_fires_without_raw() {
         adj
     );
     assert!(
-        adj.annotations.iter().any(|a| a.policy_id.as_deref() == Some("forbid-shell-exfiltration")),
+        adj.annotations
+            .iter()
+            .any(|a| a.policy_id.as_deref() == Some("forbid-shell-exfiltration")),
         "forbid-shell-exfiltration must be in annotations, got: {:?}",
         adj.annotations
     );

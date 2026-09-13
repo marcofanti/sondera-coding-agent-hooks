@@ -22,9 +22,15 @@ fn uid(entity_type: &str, id: &str) -> EntityUid {
     )
 }
 
-fn workload(id: &str) -> EntityUid { uid("Jans::Workload", id) }
-fn action(name: &str) -> EntityUid { uid("Jans::Action", name) }
-fn shell(binary: &str) -> EntityUid { uid("Jans::Shell", binary) }
+fn workload(id: &str) -> EntityUid {
+    uid("Jans::Workload", id)
+}
+fn action(name: &str) -> EntityUid {
+    uid("Jans::Action", name)
+}
+fn shell(binary: &str) -> EntityUid {
+    uid("Jans::Shell", binary)
+}
 
 fn basic_entities(agent_id: &str) -> Entities {
     let json = serde_json::json!([
@@ -127,9 +133,17 @@ fn denies_policy_violation() {
     )
     .unwrap();
     let decision = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("bash"), ctx, basic_entities("claude"),
+        workload("claude"),
+        action("exec_command"),
+        shell("bash"),
+        ctx,
+        basic_entities("claude"),
     );
-    assert_eq!(decision, Decision::Deny, "non-compliant command must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "non-compliant command must be denied"
+    );
 }
 
 // ─── DENY: YARA signature hits ───────────────────────────────────────────────
@@ -151,9 +165,17 @@ fn denies_command_injection_signature() {
     )
     .unwrap();
     let decision = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("bash"), ctx, basic_entities("claude"),
+        workload("claude"),
+        action("exec_command"),
+        shell("bash"),
+        ctx,
+        basic_entities("claude"),
     );
-    assert_eq!(decision, Decision::Deny, "command injection signature must be denied");
+    assert_eq!(
+        decision,
+        Decision::Deny,
+        "command injection signature must be denied"
+    );
 }
 
 #[test]
@@ -173,7 +195,11 @@ fn denies_critical_severity_signature() {
     )
     .unwrap();
     let decision = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("bash"), ctx, basic_entities("claude"),
+        workload("claude"),
+        action("exec_command"),
+        shell("bash"),
+        ctx,
+        basic_entities("claude"),
     );
     assert_eq!(decision, Decision::Deny, "critical severity must be denied");
 }

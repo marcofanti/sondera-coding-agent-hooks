@@ -22,10 +22,18 @@ fn uid(entity_type: &str, id: &str) -> EntityUid {
     )
 }
 
-fn workload(id: &str) -> EntityUid  { uid("Jans::Workload", id) }
-fn action(name: &str) -> EntityUid  { uid("Jans::Action", name) }
-fn shell(binary: &str) -> EntityUid { uid("Jans::Shell", binary) }
-fn file(path: &str) -> EntityUid    { uid("Jans::File", path) }
+fn workload(id: &str) -> EntityUid {
+    uid("Jans::Workload", id)
+}
+fn action(name: &str) -> EntityUid {
+    uid("Jans::Action", name)
+}
+fn shell(binary: &str) -> EntityUid {
+    uid("Jans::Shell", binary)
+}
+fn file(path: &str) -> EntityUid {
+    uid("Jans::File", path)
+}
 
 fn basic_entities() -> Entities {
     Entities::from_json_value(
@@ -76,8 +84,11 @@ fn clean_file_ctx(path: &str) -> Context {
 fn denies_rm_rf() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("rm"),
-        clean_shell_ctx("rm -rf /tmp/build"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("rm"),
+        clean_shell_ctx("rm -rf /tmp/build"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Deny, "rm -rf must be denied");
 }
@@ -86,8 +97,11 @@ fn denies_rm_rf() {
 fn denies_rm_rf_root() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("rm"),
-        clean_shell_ctx("rm -rf /"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("rm"),
+        clean_shell_ctx("rm -rf /"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Deny, "rm -rf / must be denied");
 }
@@ -98,8 +112,11 @@ fn denies_rm_rf_root() {
 fn denies_git_force_push() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("git"),
-        clean_shell_ctx("git push --force origin main"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("git"),
+        clean_shell_ctx("git push --force origin main"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Deny, "git push --force must be denied");
 }
@@ -108,8 +125,11 @@ fn denies_git_force_push() {
 fn denies_git_push_force_shorthand() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("git"),
-        clean_shell_ctx("git push -f origin main"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("git"),
+        clean_shell_ctx("git push -f origin main"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Deny, "git push -f must be denied");
 }
@@ -118,8 +138,11 @@ fn denies_git_push_force_shorthand() {
 fn denies_git_reset_hard() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("git"),
-        clean_shell_ctx("git reset --hard HEAD~5"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("git"),
+        clean_shell_ctx("git reset --hard HEAD~5"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Deny, "git reset --hard must be denied");
 }
@@ -130,8 +153,11 @@ fn denies_git_reset_hard() {
 fn denies_drop_database() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("psql"),
-        clean_shell_ctx("psql -c 'DROP DATABASE production'"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("psql"),
+        clean_shell_ctx("psql -c 'DROP DATABASE production'"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Deny, "DROP DATABASE must be denied");
 }
@@ -140,8 +166,11 @@ fn denies_drop_database() {
 fn denies_drop_table() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("psql"),
-        clean_shell_ctx("psql -c 'DROP TABLE users CASCADE'"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("psql"),
+        clean_shell_ctx("psql -c 'DROP TABLE users CASCADE'"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Deny, "DROP TABLE must be denied");
 }
@@ -152,8 +181,11 @@ fn denies_drop_table() {
 fn denies_terraform_destroy() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("terraform"),
-        clean_shell_ctx("terraform destroy -auto-approve"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("terraform"),
+        clean_shell_ctx("terraform destroy -auto-approve"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Deny, "terraform destroy must be denied");
 }
@@ -164,8 +196,11 @@ fn denies_terraform_destroy() {
 fn denies_kill_9() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("kill"),
-        clean_shell_ctx("kill -9 1"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("kill"),
+        clean_shell_ctx("kill -9 1"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Deny, "kill -9 must be denied");
 }
@@ -176,8 +211,11 @@ fn denies_kill_9() {
 fn denies_delete_pem_file() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("delete_file"), file("certs/server.pem"),
-        clean_file_ctx("certs/server.pem"), basic_entities(),
+        workload("claude"),
+        action("delete_file"),
+        file("certs/server.pem"),
+        clean_file_ctx("certs/server.pem"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Deny, "delete_file on .pem must be denied");
 }
@@ -188,8 +226,11 @@ fn denies_delete_pem_file() {
 fn allows_git_status() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("git"),
-        clean_shell_ctx("git status"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("git"),
+        clean_shell_ctx("git status"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Allow, "git status must be allowed");
 }
@@ -198,8 +239,11 @@ fn allows_git_status() {
 fn allows_cargo_test() {
     let e = engine();
     let d = e.is_authorized(
-        workload("claude"), action("exec_command"), shell("cargo"),
-        clean_shell_ctx("cargo test --workspace"), basic_entities(),
+        workload("claude"),
+        action("exec_command"),
+        shell("cargo"),
+        clean_shell_ctx("cargo test --workspace"),
+        basic_entities(),
     );
     assert_eq!(d, Decision::Allow, "cargo test must be allowed");
 }
